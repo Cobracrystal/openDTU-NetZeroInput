@@ -1,5 +1,5 @@
 from requests.auth import HTTPBasicAuth
-import requests
+import requests, json
 
 class openDTU:
 	def __init__(self, url, port = 80, username = None, password = None):
@@ -128,15 +128,23 @@ class openDTU:
 			else:
 				r = requests.get(url = f'{self.baseURL}{endpoint}', headers = extraHeaders)
 		elif method == "POST":
-			headers = {'Content-Type': 'application/x-www-form-urlencoded'}
-			if extraHeaders:
-				headers |= extraHeaders
-			r = requests.post(
-				url = f'{self.baseURL}{endpoint}',
-				headers = headers,
-				auth = HTTPBasicAuth(self.username, self.password),
-				data = f'data={data}' # Format must be manually set.
-			)
+			if (endpoint == "device/config"):
+				files = {"data": (None, json.dumps(data).encode('utf-8')) }
+				r = requests.post(
+					url=f'{self.baseURL}{endpoint}', 
+					auth=HTTPBasicAuth(self.username, self.password), 
+					files=files
+				)
+			else:
+				headers = {'Content-Type': 'application/x-www-form-urlencoded'}
+				if extraHeaders:
+					headers |= extraHeaders
+				r = requests.post(
+					url = f'{self.baseURL}{endpoint}',
+					headers = headers,
+					auth = HTTPBasicAuth(self.username, self.password), 
+					data = f'data={data}' # Format must be manually set.
+				)
 		else:
 			return None
 		if r.status_code == 401: # Unauthorized. Response Text is empty, so return headers.
