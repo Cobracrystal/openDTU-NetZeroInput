@@ -1,27 +1,75 @@
+import time
+import suntime
 from openDTU import * 
+from dateutil import tz
 
 username = "admin"
 password = open(r"C:\Users\Simon\Desktop\programs\Files\openDTUAuth.pw").read().strip()
-url = "http://192.168.178.48"
+urlOpenDTU = "http://192.168.178.48"
+urlBitshake = "http://192.168.178.40"
 port = 80
 
-manualConfig = {
-	"curPin": {
-		"name": "CMT, LEDs, Display",
-		"nrf24": { "clk": -1,"cs": -1,"en": -1,"irq": -1,"miso": -1,"mosi": -1},
-		"cmt": { "clk": 18, "cs": 4, "fcs": 5, "sdio": 23, "gpio2": 19, "gpio3": 16},
-		"eth": { "enabled": False, "phy_addr": 0, "power": -1, "mdc": 23, "mdio": 18, "type": 0, "clk_mode": 0},
-		"display": { "type": 3, "data": 21, "clk": 22, "cs": 255, "reset": 255 }
-	},
-	"display": { "rotation": 0, "power_safe": True, "screensaver": True, "contrast": 10, "language": 1, "diagramduration": 18000 }
-}
-# config = {"curPin":{"name":"CMT, LEDs, Display","nrf24":{"clk":-1,"cs":-1,"en":-1,"irq":-1,"miso":-1,"mosi":-1},"cmt":{"clk":18,"cs":4,"fcs":5,"sdio":23,"gpio2":19,"gpio3":16},"w5500":{"sclk":-1,"mosi":-1,"miso":-1,"cs":-1,"int":-1,"rst":-1},"eth":{"enabled":False,"phy_addr":0,"power":-1,"mdc":23,"mdio":18,"type":0,"clk_mode":0},"display":{"type":3,"data":21,"clk":22,"cs":255,"reset":255},"led":{"led0":25,"led1":26}},"display":{"rotation":0,"power_safe":True,"screensaver":True,"contrast":6,"locale":"de","diagramduration":18000,"diagrammode":1},"led":[{"brightness":100},{"brightness":100}]}
-config = {"curPin":{"name":"CMT, LEDs, Display","nrf24":{"clk":-1,"cs":-1,"en":-1,"irq":-1,"miso":-1,"mosi":-1},"cmt":{"clk":18,"cs":4,"fcs":5,"sdio":23,"gpio2":19,"gpio3":16},"w5500":{"sclk":-1,"mosi":-1,"miso":-1,"cs":-1,"int":-1,"rst":-1},"eth":{"enabled":False,"phy_addr":0,"power":-1,"mdc":23,"mdio":18,"type":0,"clk_mode":0},"display":{"type":3,"data":21,"clk":22,"cs":255,"reset":255},"led":{"led0":25,"led1":26}},"display":{"rotation":0,"power_safe":True,"screensaver":True,"contrast":6,"locale":"de","diagramduration":18000,"diagrammode":1},"led":[{"brightness":10},{"brightness":10}]}
-dtu = openDTU(url, port, username, password)
-# dconfig = dtu.deviceGetConfig()
-# print(dconfig)
-# print(dtu.deviceSetConfig({"curPin":{"name":"CMT, LEDs, Display"}}))
-# print(dtu.i18nGetLanguages())
-# print(dtu.i18nGetLanguage("en"))
-print(dtu.deviceSetConfig(config))
-# print(dtu.inverterSetLimitConfig(dtu.inverterGetSerial(), {"limit_type":1, "limit_value":50}))
+latitude = 50.988768
+longitude = 7.190650
+sun = suntime.Sun(lat=latitude, lon=longitude)
+sunset = sun.get_sunset_time(time_zone=tz.gettz("Europe/Berlin"))
+sunrise = sun.get_sunrise_time(time_zone=tz.gettz("Europe/Berlin"))
+standard_interval = 10 # Time in seconds between each check and update 
+
+print(f'Programmstart: Setze Sonnenaufgang auf {sunrise} und Untergang auf {sunset}')
+
+dtu = openDTU(urlOpenDTU, port, username, password)
+
+main_inverter = dtu.inverterGetSerial(0)
+max_power = dtu.inverterGetLimitConfig()[main_inverter]['max_power']
+
+while(True):
+	try:
+		try:
+			inverter_limit_config = dtu.inverterGetLimitConfig()
+			inverter_runtime_info = dtu.inverterGetRuntimeInfo()
+			flagReachable = inverter_runtime_info['inverters'][0]['reachable']
+			flagProducing = inverter_runtime_info['inverters'][0]['producing']
+			old_limit_r = inverter_runtime_info['inverters'][0]['limit_relative']
+			old_limit_a = inverter_runtime_info['inverters'][0]['limit_absolute']
+			current_power_delivery = inverter_runtime_info['total']['Power']['v']
+			limit_set_status = inverter_limit_config[main_inverter]['limit_set_status']
+		except Exception as e:
+			print(f'Error has occured while trying to get openDTU data. Waiting 10 minutes before retrying. Exception: {repr(e)}')
+			time.sleep(600)
+			continue
+		
+		try:
+			bitMeter_data = requests.get(url = f'{urlBitshake}/cm?cmnd=status 10').json()
+			current_power_consumption = bitMeter_data["StatusSNS"]["LK13BE"]["Power"]
+		except Exception as e:
+			print(f'Error has occured while trying to get BitMeter data. Waiting 10 minutes before retrying. Exception: {repr(e)}')
+		
+		if limit_set_status != 'Ok': # If previous change of limit has not been finalized, wait and retry.
+			print(f'Inverter Limit Status is currently {limit_set_status}. Waiting 10 seconds before retrying.')
+			time.sleep(10)
+			continue
+
+		old_limit_a = round(old_limit_a)
+		old_limit_r = float(old_limit_r)
+		old_limit_adj_a = old_limit_a // 4 
+		new_limit_a = current_power_consumption + old_limit_adj_a # works even if negative.
+		new_limit_a = new_limit_a * 4
+		new_limit_r = round(100 * new_limit_a / max_power, ndigits=1)
+		if new_limit_a > max_power:
+			new_limit_a = max_power
+			new_limit_r = 100
+		elif new_limit_a  < 0:
+			new_limit_a = 0
+			new_limit_adj_r = 0
+		print(f'Aktueller Stromverbrauch:\t{current_power_consumption}W')
+		print(f'Altes Limit: {old_limit_r}% / {old_limit_a}W. Batterieleistung: {current_power_delivery}W.')
+		print(f'Neues Limit: {new_limit_r}% / {new_limit_a}W ({new_limit_a}/4 = {new_limit_a//4}, {current_power_consumption + current_power_delivery} = {current_power_consumption} + {current_power_delivery})')
+		setLimitResponse = dtu.inverterSetLimitConfig(main_inverter, {"limit_type":0, "limit_value":new_limit_a})
+		if (setLimitResponse['type'] != "success"):
+			print(f'Error when setting new Limit. Error message: {setLimitResponse}')
+		time.sleep(5)
+	except KeyboardInterrupt:
+		print("Programm wird geschlossen. Setze Limit auf 60%")
+		dtu.inverterSetLimitConfig(main_inverter, {"limit_type":1, "limit_value":60})
+		break
