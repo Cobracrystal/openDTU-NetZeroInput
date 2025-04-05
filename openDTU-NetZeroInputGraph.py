@@ -1,11 +1,10 @@
 import time
-from datetime import datetime
 import suntime
+from datetime import datetime, timedelta
 from openDTU import * 
 from dateutil import tz
-import matplotlib.pyplot as plt
+from matplotlib import dates, pyplot as plt
 from matplotlib.animation import FuncAnimation
-import matplotlib.dates as mdates
 
 username = "admin"
 password = open(r"C:\Users\Simon\Desktop\programs\Files\openDTUAuth.pw").read().strip()
@@ -14,12 +13,11 @@ urlBitshake = "http://192.168.178.40"
 port = 80
 latitude = 50.988768
 longitude = 7.190650
-standard_interval = 5 # Time in seconds between each check
-flag_create_graph = True
-
+standard_interval = 1 # Time in seconds between each check
+max_graph_width = 10000 # Number of datapoints the graph should keep.
 
 ###### TODO : CHECK IF SUNRISE/SUNSET, OPERATE BASED ON THAT. 
-
+###### TODO : dtu: 37.6, internal: 39.1 VOLT. SHUTDOWN BEFORE THAT.
 
 sun = suntime.Sun(lat=latitude, lon=longitude)
 sunset = sun.get_sunset_time(time_zone=tz.gettz("Europe/Berlin"))
@@ -34,14 +32,15 @@ max_power = dtu.inverterGetLimitConfig()[main_inverter]['max_power']
 
 graphTime, graphBatteryPower, graphPowerConsumption, graphPowerLimit = [], [], [], []
 figure, axes = plt.subplots(num='Leistung')
-plt.gca().xaxis.set_major_formatter(mdates.DateFormatter("%H:%M:%S"))
+plt.gca().xaxis.set_major_formatter(dates.DateFormatter("%H:%M:%S"))
 line0, = plt.plot(graphTime, graphBatteryPower, 'g', label='Batterieleistung')
 line1, = plt.plot(graphTime, graphPowerConsumption, 'r', label='Stromverbrauch')
 line2, = plt.plot(graphTime, graphPowerLimit, 'b', label='Wechselrichterlimit')
 
 def init():
-	figure.autofmt_xdate()
 	axes.set_ylim(-100, max_power)
+	figure.autofmt_xdate()
+	figure.tight_layout()
 	plt.ylabel("Leistung")
 	plt.legend()
 	line0.set_data(graphTime, graphBatteryPower)
@@ -54,7 +53,7 @@ def update(frame):
 		update.ticks += 1
 	except:
 		update.ticks = 1
-		update.writeLog = True
+		update.wasReachable = True
 	try:
 		inverter_limit_config = dtu.inverterGetLimitConfig()
 		inverter_runtime_info = dtu.inverterGetRuntimeInfo()
@@ -78,7 +77,7 @@ def update(frame):
 		return line0, line1, line2,
 	
 	if not flagReachable:
-		if update.writeLog:
+		if update.wasReachable:
 			print(f'[{datetime.now().strftime("%H:%M:%S")}] Wechselrichter nicht erreichbar. Skippe Logs bis wieder erreichbar.')
 	elif limit_set_status == "Pending":
 		print(f'[{datetime.now().strftime("%H:%M:%S")}] Wechselrichter verarbeitet noch das vorherige Limit. Skippe.')
@@ -101,7 +100,7 @@ def update(frame):
 		setLimitResponse = dtu.inverterSetLimitConfig(main_inverter, {"limit_type":0, "limit_value":new_limit_a})
 		if (setLimitResponse['type'] != "success"):
 			print(f'[{datetime.now().strftime("%H:%M:%S")}] Fehler beim setzen des Limits. Fehlernachricht: {setLimitResponse}')
-	update.writeLog = flagReachable
+	update.wasReachable = flagReachable
 	graphTime.append(datetime.now())
 	graphBatteryPower.append(current_power_delivery)
 	graphPowerConsumption.append(current_power_consumption)
@@ -109,8 +108,8 @@ def update(frame):
 	line0.set_data(graphTime, graphBatteryPower)
 	line1.set_data(graphTime, graphPowerConsumption)
 	line2.set_data(graphTime, graphPowerLimit)
-	figure.gca().relim()
-	figure.gca().autoscale_view()
+	axes.relim()
+	axes.autoscale_view(tight=True)
 	return line0, line1, line2,
 
 try:
