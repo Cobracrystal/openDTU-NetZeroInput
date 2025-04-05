@@ -32,7 +32,7 @@ while(True):
 	try:
 		try:
 			inverter_limit_config = dtu.inverterGetLimitConfig()
-			inverter_runtime_info = dtu.inverterGetRuntimeInfo()
+			inverter_runtime_info = dtu.inverterGetRuntimeInfo(main_inverter)
 			flagReachable = inverter_runtime_info['inverters'][0]['reachable']
 			flagProducing = inverter_runtime_info['inverters'][0]['producing']
 			old_limit_r = inverter_runtime_info['inverters'][0]['limit_relative']
