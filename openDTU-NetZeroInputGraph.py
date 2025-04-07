@@ -45,9 +45,8 @@ main_inverter = dtu.inverterGetSerial(0)
 max_power = dtu.inverterGetLimitConfig()[main_inverter]['max_power']
 
 figure, axes = plt.subplots(num='Leistung')
-plt.gca().xaxis.set_major_formatter(dates.DateFormatter("%H:%M:%S"))
 try:
-	graphTime, graphPowerLimit, graphBatteryPower, graphPowerConsumption = pickle.load(open(f'data-{datetime.now().strftime("%Y-%m-%d")}.pickle', "rb"))
+	graphTime, graphPowerLimit, graphBatteryPower, graphPowerConsumption = pickle.load(open(f'data-{(datetime.now() - timedelta(hours=6)).strftime("%Y-%m-%d")}.pickle', "rb"))
 	log(f'Lade Graphendaten..')
 except:
 	graphTime, graphPowerLimit, graphBatteryPower, graphPowerConsumption = [], [], [], []
@@ -62,6 +61,8 @@ def init():
 	figure.tight_layout()
 	plt.ylabel("Leistung")
 	plt.legend()
+	axes.xaxis.set_major_formatter(dates.DateFormatter("%H:%M:%S"))
+	# axes.relim()
 	line0.set_data(graphTime, graphPowerLimit)
 	line1.set_data(graphTime, graphBatteryPower)
 	line2.set_data(graphTime, graphPowerConsumption)
@@ -69,7 +70,7 @@ def init():
 
 def saveAndExit():
 	try:
-		pickle.dump((graphTime, graphPowerLimit, graphBatteryPower, graphPowerConsumption), open(f'data-{datetime.now().strftime("%Y-%m-%d")}.pickle', 'wb'))
+		pickle.dump((graphTime, graphPowerLimit, graphBatteryPower, graphPowerConsumption), open(f'data-{(datetime.now() - timedelta(hours=6)).strftime("%Y-%m-%d")}.pickle', 'wb'))
 		log(f'Speichern erfolgreich. Beende..')
 	except:
 		log(f'Speichern fehlgeschlagen. Beende..')	
