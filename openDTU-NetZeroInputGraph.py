@@ -56,7 +56,7 @@ line1, = plt.plot(graphTime, graphBatteryPower, 'g', label='Wechselrichterleistu
 line2, = plt.plot(graphTime, graphPowerConsumption, 'r', label='Stromverbrauch')
 
 def init():
-	# axes.set_ylim(-100, max_power)
+	# axes.set_ylim(-100, max_power) # ONLY IF BLIT = TRUE
 	figure.autofmt_xdate()
 	figure.tight_layout()
 	plt.ylabel("Leistung")
@@ -166,7 +166,7 @@ def update(frame):
 		raise SystemExit
 
 try:
-	animation = FuncAnimation(figure, update, blit=True, init_func=init, cache_frame_data=False, interval=checkInterval)
+	animation = FuncAnimation(figure, update, blit=False, init_func=init, cache_frame_data=False, interval=checkInterval)
 	init()
 	plt.show()
 except KeyboardInterrupt:
