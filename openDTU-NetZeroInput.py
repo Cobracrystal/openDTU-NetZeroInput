@@ -117,13 +117,7 @@ def update():
 			else:
 				limit_ratio = 1
 
-			if not batteryIsOn: # if battery is off, we set the limit to 100 once and don't do anything after that.
-				if old_limit_r != 100:
-					log(f'Batterie liefert keinen Strom. Setze Limit auf 100 und warte.')
-					new_limit_r = 100
-				else:
-					return True
-			else: # if battery is on, we adjust the limit to have net zero input into electricity grid
+			if batteryIsOn: # if battery is on, we adjust the limit to have net zero input into electricity grid
 				if battery_voltage < battery_voltage_threshold: # if we fall below threshold, set limit to 0 and wait
 					log(f'Batteriestrom ist {battery_voltage}V, was niedriger als die festgelegte Grenze {battery_voltage_threshold}V ist.')
 					log(f'Limit wird bis Sonnenaufgang ({sunrise.time()}) auf 0 gesetzt.')
@@ -133,13 +127,20 @@ def update():
 				else:
 					new_limit_a = round(limit_ratio * (current_power_consumption + current_power_delivery)) # works even if negative.
 					new_limit_r = round(100 * new_limit_a / max_power, ndigits=1)
-				# adjust limits so that they stay between 0-100%
-				if new_limit_a > max_power:
-					new_limit_a = max_power
+			else: # if battery is off, we set the limit to 100 once and don't do anything after that.
+				if old_limit_r != 100:
+					log(f'Batterie liefert keinen Strom. Setze Limit auf 100 und warte.')
 					new_limit_r = 100
-				elif new_limit_a  < 0:
-					new_limit_a = 0
-					new_limit_r = 0
+					new_limit_a = max_power
+				else:
+					return True
+			# adjust limits so that they stay between 0-100%
+			if new_limit_a > max_power:
+				new_limit_a = max_power
+				new_limit_r = 100
+			elif new_limit_a  < 0:
+				new_limit_a = 0
+				new_limit_r = 0
 			log(f'Aktueller Stromverbrauch:\t{Fore.LIGHTRED_EX if current_power_consumption >= 0 else Fore.LIGHTGREEN_EX}{current_power_consumption}W')
 			log(f'Aktuelles Limit: {Fore.LIGHTWHITE_EX}{old_limit_r}% / {old_limit_a}W{Style.RESET_ALL}. Gesamtleistung: {Fore.LIGHTCYAN_EX}{current_power_delivery}W.')
 			if (new_limit_a != old_limit_a):
