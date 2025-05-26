@@ -67,7 +67,7 @@ def update():
 	try:
 		update.ticks += 1
 	except:
-		update.ticks = 0
+		update.ticks = 1
 		update.wasReachable = True
 		update.limitUnchanged = False
 		update.batteryBelowThreshold = False
@@ -81,8 +81,8 @@ def update():
 				battery_power = inverter_runtime_info['inverters'][0]['DC'][index]['Power']['v']
 				battery_voltage = inverter_runtime_info['inverters'][0]['DC'][index]['Voltage']['v']
 		batteryIsOn = True if battery_power > 0 else False
-		old_limit_r = inverter_runtime_info['inverters'][0]['limit_relative']
-		old_limit_a = inverter_runtime_info['inverters'][0]['limit_absolute']
+		old_limit_r = float(inverter_runtime_info['inverters'][0]['limit_relative'])
+		old_limit_a = round(inverter_runtime_info['inverters'][0]['limit_absolute'])
 		current_dc_power_delivery = inverter_runtime_info['inverters'][0]['INV']['0']['Power DC']['v']
 		ac_dc_conversion_ratio = inverter_runtime_info['inverters'][0]['INV']['0']['Efficiency']['v'] / 100
 		current_power_delivery = inverter_runtime_info['total']['Power']['v']
@@ -103,6 +103,13 @@ def update():
 		log(f'{Back.LIGHTRED_EX}{Fore.BLACK}Fehler{Style.RESET_ALL} bei Datenabfrage von BitMeter.')
 		return False
 	
+	arrTime.append(datetime.now())
+	arrPowerLimit.append(old_limit_a)
+	arrBatteryPower.append(current_power_delivery)
+	arrPowerConsumption.append(current_power_consumption)
+	if update.ticks % (1000 * saveInterval / checkInterval) == 0:
+		save()
+	
 	if update.ticks % (update_interval / checkInterval) == 0:
 		if not flagReachable:
 			if update.wasReachable:
@@ -110,8 +117,6 @@ def update():
 		elif limit_set_status == "Pending":
 			log(f'Wechselrichter verarbeitet noch das vorherige Limit. Skippe.')
 		else:
-			old_limit_a = round(old_limit_a)
-			old_limit_r = float(old_limit_r)
 			if current_power_delivery > 0 and old_limit_a > 0: # no division by 0
 				limit_ratio = old_limit_a / current_power_delivery
 			else:
@@ -128,7 +133,7 @@ def update():
 					new_limit_a = round(limit_ratio * (current_power_consumption + current_power_delivery)) # works even if negative.
 					new_limit_r = round(100 * new_limit_a / max_power, ndigits=1)
 			else: # if battery is off, we set the limit to 100 once and don't do anything after that.
-				if old_limit_r != 100:
+				if old_limit_r != 100 or update.ticks * checkInterval // update_interval == 1:
 					log(f'Batterie liefert keinen Strom. Setze Limit auf 100 und warte.')
 					new_limit_r = 100
 					new_limit_a = max_power
@@ -153,12 +158,6 @@ def update():
 				log(f'Neues und altes Limit gleich, kein Update erforderlich.')
 				update.limitUnchanged = True
 			update.wasReachable = flagReachable
-	arrTime.append(datetime.now())
-	arrPowerLimit.append(old_limit_a)
-	arrBatteryPower.append(current_power_delivery)
-	arrPowerConsumption.append(current_power_consumption)
-	if update.ticks % (1000 * saveInterval / checkInterval) == 0 and update.ticks > 0:
-		save()
 	return True
 
 while True:
