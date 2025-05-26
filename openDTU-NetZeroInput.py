@@ -113,10 +113,14 @@ def update():
 	if update.ticks % (update_interval / checkInterval) == 0:
 		if not flagReachable:
 			if update.wasReachable:
+				update.wasReachable = flagReachable
 				log(f'Wechselrichter nicht erreichbar. Skippe Logs bis wieder erreichbar.')
 		elif limit_set_status == "Pending":
 			log(f'Wechselrichter verarbeitet noch das vorherige Limit. Skippe.')
 		else:
+			if not update.wasReachable:
+				log(f'Wechselrichter wieder erreichbar. Führe Skript normal weiter.')
+			update.wasReachable = flagReachable
 			if current_power_delivery > 0 and old_limit_a > 0: # no division by 0
 				limit_ratio = old_limit_a / current_power_delivery
 			else:
@@ -157,7 +161,6 @@ def update():
 			elif not update.limitUnchanged:
 				log(f'Neues und altes Limit gleich, kein Update erforderlich.')
 				update.limitUnchanged = True
-			update.wasReachable = flagReachable
 	return True
 
 while True:
