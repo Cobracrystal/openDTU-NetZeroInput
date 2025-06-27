@@ -59,7 +59,7 @@ def save():
 	fileName = f'data-{(datetime.now() - timedelta(hours=6)).strftime("%Y-%m-%d")}.pickle'
 	try:
 		pickle.dump((arrTime, arrPowerLimit, arrBatteryPower, arrPowerConsumption), open(fileName, 'wb'))
-		log(f'{Back.LIGHTGREEN_EX}{Fore.BLACK}Daten in {fileName} gespeichert.')
+		log(f'{Back.LIGHTGREEN_EX}{Fore.BLACK}Daten in {fileName} gespeichert.{Style.RESET_ALL}')
 	except:
 		log(f'{Back.LIGHTRED_EX}{Fore.BLACK}Speichern fehlgeschlagen.')	
 
