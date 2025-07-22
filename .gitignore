@@ -1,4 +1,5 @@
 *.json
 *.pickle
+*log.txt
 __pycache__
 openDTU-testing.py
