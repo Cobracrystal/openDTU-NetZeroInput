@@ -6,7 +6,7 @@ from openDTU import *
 from dateutil import tz
 from colorama import Fore, Style, Back
 from colorama import init as colorama_init
-
+import re
 username = "admin"
 password = open(r"C:\Users\Simon\Desktop\programs\Files\openDTUAuth.pw").read().strip()
 urlOpenDTU = "http://192.168.178.48"
@@ -16,28 +16,33 @@ latitude = 50.988768 # for calculating sunrise/sunset
 longitude = 7.190650 # for calculating sunrise/sunset
 update_interval = 2000 # Time in milliseconds between each update
 checkInterval = 250 # Time in milliseconds between each check
-logInTextFile = False # Enable if you want all console output to be logged
+logInTextFile = True # Enable if you want all console output to be logged
 battery_voltage_threshold = 48.5 # Threshold below which connection with battery is stopped.
 saveInterval = 900 # Time in seconds between each save
 
 colorama_init()
 ###### TODO : CHECK IF SUNRISE/SUNSET, OPERATE BASED ON THAT. 
 
-def log(str):
+def log(text):
 	fdate = datetime.now().strftime("%H:%M:%S")
-	print(f'{Fore.LIGHTYELLOW_EX}[{fdate}]{Style.RESET_ALL} {str}{Style.RESET_ALL}')
+	print(f'{Fore.LIGHTYELLOW_EX}[{fdate}]{Style.RESET_ALL} {text}{Style.RESET_ALL}')
+	fName = getFileName("txt")
 	if logInTextFile:
 		try:
-			f = open("dtulog.txt", "a+")
-			f.write(f'[{fdate}] {str}' + '\n')
+			f = open(fName, "a+")
+			text = re.sub(r'\x1b\[\d+m', '', text)
+			f.write(f"[{fdate}] {text}" + '\n')
 		finally:
 			f.close()
+
+def getFileName(fExt):
+	return f'{(datetime.now() - timedelta(hours=6)).strftime("%Y-%m-%d")}' + ('_data' if fExt == 'pickle' else '_log') + '.' + fExt
 
 sun = suntime.Sun(lat=latitude, lon=longitude)
 sunset = sun.get_sunset_time(time_zone=tz.gettz("Europe/Berlin"))
 sunrise = sun.get_sunrise_time(time_zone=tz.gettz("Europe/Berlin"))
 
-log(f'Programmstart')
+log(f'Programmstart: [{(datetime.now()).strftime("%Y-%m-%d %H:%M:%S")}]')
 log(f'Sonnenaufgang: {sunrise.time()}, Sonnenuntergang: {sunset.time()}')
 
 dtu = openDTU(urlOpenDTU, portOpenDTU, username, password)
@@ -49,14 +54,14 @@ except:
 
 
 try:
-	arrTime, arrPowerLimit, arrBatteryPower, arrPowerConsumption = pickle.load(open(f'data-{(datetime.now() - timedelta(hours=6)).strftime("%Y-%m-%d")}.pickle', "rb"))
+	arrTime, arrPowerLimit, arrBatteryPower, arrPowerConsumption = pickle.load(open(getFileName("pickle"), "rb"))
 	log(f'Lade bestehende Daten..')
 except:
 	arrTime, arrPowerLimit, arrBatteryPower, arrPowerConsumption = [], [], [], []
 	log(f'Keine alten Daten gefunden. Starte..')
 
 def save():
-	fileName = f'data-{(datetime.now() - timedelta(hours=6)).strftime("%Y-%m-%d")}.pickle'
+	fileName = getFileName("pickle")
 	try:
 		pickle.dump((arrTime, arrPowerLimit, arrBatteryPower, arrPowerConsumption), open(fileName, 'wb'))
 		log(f'{Back.LIGHTGREEN_EX}{Fore.BLACK}Daten in {fileName} gespeichert.{Style.RESET_ALL}')
@@ -71,6 +76,7 @@ def update():
 		update.wasReachable = True
 		update.limitUnchanged = False
 		update.batteryBelowThreshold = False
+		update.batteryIsOn = True
 	try:
 		inverter_limit_config = dtu.inverterGetLimitConfig()
 		inverter_runtime_info = dtu.inverterGetRuntimeInfo(main_inverter)
@@ -127,6 +133,9 @@ def update():
 				limit_ratio = 1
 
 			if batteryIsOn: # if battery is on, we adjust the limit to have net zero input into electricity grid
+				if not update.batteryIsOn:
+					log(f'Batterie liefert ab jetzt Strom. Beginne mit Anpassung des Limits.')
+					update.batteryIsOn = True
 				if battery_voltage < battery_voltage_threshold: # if we fall below threshold, set limit to 0 and wait
 					log(f'Batteriestrom ist {battery_voltage}V, was niedriger als die festgelegte Grenze {battery_voltage_threshold}V ist.')
 					log(f'Limit wird bis Sonnenaufgang ({sunrise.time()}) auf 0 gesetzt.')
@@ -137,12 +146,13 @@ def update():
 					new_limit_a = round(limit_ratio * (current_power_consumption + current_power_delivery)) # works even if negative.
 					new_limit_r = round(100 * new_limit_a / max_power, ndigits=1)
 			else: # if battery is off, we set the limit to 100 once and don't do anything after that.
+				if not update.batteryIsOn:
+					return True
 				if old_limit_r != 100 or update.ticks * checkInterval // update_interval == 1:
 					log(f'Batterie liefert keinen Strom. Setze Limit auf 100 und warte.')
 					new_limit_r = 100
 					new_limit_a = max_power
-				else:
-					return True
+					update.batteryIsOn = False
 			# adjust limits so that they stay between 0-100%
 			if new_limit_a > max_power:
 				new_limit_a = max_power
