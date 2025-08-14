@@ -17,11 +17,12 @@ longitude = 7.190650 # for calculating sunrise/sunset
 update_interval = 2000 # Time in milliseconds between each update
 checkInterval = 250 # Time in milliseconds between each check
 logInTextFile = True # Enable if you want all console output to be logged
+logData = True
 battery_voltage_threshold = 48.5 # Threshold below which connection with battery is stopped.
 saveInterval = 900 # Time in seconds between each save
 
 colorama_init()
-###### TODO : CHECK IF SUNRISE/SUNSET, OPERATE BASED ON THAT. 
+###### TODO : CHECK IF SUNRISE/SUNSET, OPERATE BASED ON THAT. (INSTEAD OF CHECKING BATTERY CONNECTION)
 
 def log(text):
 	fdate = datetime.now().strftime("%H:%M:%S")
@@ -52,13 +53,13 @@ try:
 except:
 	log(f"{Back.LIGHTRED_EX}{Fore.BLACK}Fehler{Style.RESET_ALL} bei der Datenabfrage von openDTU.")
 
-
-try:
-	arrTime, arrPowerLimit, arrBatteryPower, arrPowerConsumption = pickle.load(open(getFileName("pickle"), "rb"))
-	log(f'Lade bestehende Daten..')
-except:
-	arrTime, arrPowerLimit, arrBatteryPower, arrPowerConsumption = [], [], [], []
-	log(f'Keine alten Daten gefunden. Starte..')
+if logData:
+	try:
+		arrTime, arrPowerLimit, arrBatteryPower, arrPowerConsumption = pickle.load(open(getFileName("pickle"), "rb"))
+		log(f'Lade bestehende Daten..')
+	except:
+		arrTime, arrPowerLimit, arrBatteryPower, arrPowerConsumption = [], [], [], []
+		log(f'Keine alten Daten gefunden. Starte..')
 
 def save():
 	fileName = getFileName("pickle")
@@ -113,7 +114,7 @@ def update():
 	arrPowerLimit.append(old_limit_a)
 	arrBatteryPower.append(current_power_delivery)
 	arrPowerConsumption.append(current_power_consumption)
-	if update.ticks % (1000 * saveInterval / checkInterval) == 0:
+	if logData and update.ticks % (1000 * saveInterval / checkInterval) == 0:
 		save()
 	
 	if update.ticks % (update_interval / checkInterval) == 0:
