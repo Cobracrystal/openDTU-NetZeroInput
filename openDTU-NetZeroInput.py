@@ -7,6 +7,7 @@ from dateutil import tz
 from colorama import Fore, Style, Back
 from colorama import init as colorama_init
 import re
+import os
 username = "admin"
 password = open(r"C:\Users\Simon\Desktop\programs\Files\openDTUAuth.pw").read().strip()
 urlOpenDTU = "http://192.168.178.48"
@@ -20,7 +21,7 @@ logInTextFile = True # Enable if you want all console output to be logged
 logData = True
 battery_voltage_threshold = 48.5 # Threshold below which connection with battery is stopped.
 saveInterval = 900 # Time in seconds between each save
-
+os.chdir('data')
 colorama_init()
 ###### TODO : CHECK IF SUNRISE/SUNSET, OPERATE BASED ON THAT. (INSTEAD OF CHECKING BATTERY CONNECTION)
 
