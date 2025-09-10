@@ -5,3 +5,5 @@ __pycache__
 openDTU-testing.py
 *env
 .envrc
+openDTUAuth.pw
+openDTUurl.dt

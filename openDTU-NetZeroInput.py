@@ -9,7 +9,7 @@ from colorama import init as colorama_init
 import re
 import os
 username = "admin"
-password = open(r"C:\Users\Simon\Desktop\programs\Files\openDTUAuth.pw").read().strip()
+password = open(r"openDTUAuth.pw").read().strip()
 urlOpenDTU = "http://192.168.178.48"
 urlBitshake = "http://192.168.178.40"
 portOpenDTU = 80
