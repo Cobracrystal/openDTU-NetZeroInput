@@ -2,7 +2,7 @@
 *.pickle
 *log.txt
 __pycache__
-openDTU-testing.py
+testing.py
 *env
 .envrc
 openDTUAuth.pw
