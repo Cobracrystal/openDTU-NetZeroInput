@@ -24,7 +24,7 @@ def fetch_data(hours=24):
     rows = cursor.fetchall()
     conn.close()
     # Convert to list of dicts for JSON
-    return [{"timestamp": ts, "inverterLimit": l, "battery": b, "consumption": c} for ts, l, b, c in rows]
+    return [{"timestamp": ts, "inverterLimit": lim, "battery": b, "consumption": c} for ts, lim, b, c in rows]
 
 @app.route("/data.json")
 def data_json():
