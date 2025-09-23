@@ -27,8 +27,7 @@
     async function drawChart() {
         const data = await fetchData();
 
-        if (chart) {
-            // Update existing chart
+        if (chart) { // update chart if exists, else create it
             chart.data.labels = data.labels;
             chart.data.datasets[0].data = data.inverterLimit;
             chart.data.datasets[1].data = data.consumption;
@@ -36,7 +35,6 @@
             chart.data.datasets[3].data = data.voltage;
             chart.update();
         } else {
-            // Create chart for the first time
             const ctx = document.getElementById('solarChart').getContext('2d');
             chart = new Chart(ctx, {
                 type: 'line',
@@ -51,7 +49,7 @@
                 },
                 options: {
                     responsive: true,
-                    animation: false, // Disable animations for frequent updates
+                    animation: false, // bad performance
                     scales: {
                         x: {
                             display: true,
@@ -60,9 +58,8 @@
                         y: {
                             display: true,
                             title: { display: true, text: 'Power (W)' },
-                            // auto-scaling
                             suggestedMin: 0,
-                            suggestedMax: Math.max(
+                            suggestedMax: Math.max( // scale y-axis
                                 Math.max(...data.inverterLimit),
                                 Math.max(...data.battery),
                                 Math.max(...data.consumption),
@@ -75,11 +72,9 @@
         }
     }
 
-    // Initial draw
     drawChart();
 
-    // Refresh every 5 seconds
-    setInterval(drawChart, 5000);
+    setInterval(drawChart, 5000); // refresh 
     </script>
 </body>
 </html>
