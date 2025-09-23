@@ -40,7 +40,7 @@ CREATE TABLE IF NOT EXISTS measurements (
 	battery REAL,
 	consumption REAL,
 	voltage REAL
-)			   
+)
 """)
 conn.commit()
 cursor = conn.cursor()
@@ -97,7 +97,7 @@ def update():
 		inverter_limit_config = dtu.inverterGetLimitConfig()
 		inverter_runtime_info = dtu.inverterGetRuntimeInfo(main_inverter)
 		inverterIsReachable = inverter_runtime_info['inverters'][0]['reachable']
-		flagProducing = inverter_runtime_info['inverters'][0]['producing']
+		# flagProducing = inverter_runtime_info['inverters'][0]['producing']
 		for index in inverter_runtime_info['inverters'][0]['DC']:
 			if "batterie" in inverter_runtime_info['inverters'][0]['DC'][index]['name']['u'].lower():
 				battery_power = inverter_runtime_info['inverters'][0]['DC'][index]['Power']['v']
@@ -105,8 +105,8 @@ def update():
 		batteryIsOn = True if battery_power > 0 else False
 		old_limit_r = float(inverter_runtime_info['inverters'][0]['limit_relative'])
 		old_limit_a = round(inverter_runtime_info['inverters'][0]['limit_absolute'])
-		current_dc_power_delivery = inverter_runtime_info['inverters'][0]['INV']['0']['Power DC']['v']
-		ac_dc_conversion_ratio = inverter_runtime_info['inverters'][0]['INV']['0']['Efficiency']['v'] / 100
+		# current_dc_power_delivery = inverter_runtime_info['inverters'][0]['INV']['0']['Power DC']['v']
+		# ac_dc_conversion_ratio = inverter_runtime_info['inverters'][0]['INV']['0']['Efficiency']['v'] / 100
 		current_power_delivery = inverter_runtime_info['total']['Power']['v']
 		max_power = inverter_limit_config[main_inverter]['max_power']
 		limit_set_status = inverter_limit_config[main_inverter]['limit_set_status']
@@ -170,8 +170,8 @@ def update():
 					return True
 				if old_limit_r != 100 or ticks * checkInterval // update_interval == 1:
 					log(f'Batterie liefert keinen Strom. Setze Limit auf 100 und warte.')
-					new_limit_r = 100
-					new_limit_a = max_power
+					new_limit_r = 0 # 100
+					new_limit_a = 0 # max_power
 					batteryWasOn = False
 			# adjust limits so that they stay between 0-100%
 			if new_limit_a > max_power:

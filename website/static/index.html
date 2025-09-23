@@ -31,8 +31,8 @@
             // Update existing chart
             chart.data.labels = data.labels;
             chart.data.datasets[0].data = data.inverterLimit;
-            chart.data.datasets[1].data = data.battery;
-            chart.data.datasets[2].data = data.consumption;
+            chart.data.datasets[1].data = data.consumption;
+            chart.data.datasets[2].data = data.battery;
             chart.data.datasets[3].data = data.voltage;
             chart.update();
         } else {
