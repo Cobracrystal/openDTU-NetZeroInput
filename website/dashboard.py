@@ -16,7 +16,7 @@ def fetch_data(hours=24):
     now = int(time.time())
     since = now - hours * 3600
     cursor.execute("""
-        SELECT timestamp, inverterLimit, battery, consumption
+        SELECT timestamp, inverterLimit, battery, consumption, voltage
         FROM measurements
         WHERE timestamp >= ?
         ORDER BY timestamp ASC
@@ -24,7 +24,7 @@ def fetch_data(hours=24):
     rows = cursor.fetchall()
     conn.close()
     # Convert to list of dicts for JSON
-    return [{"timestamp": ts, "inverterLimit": lim, "battery": b, "consumption": c} for ts, lim, b, c in rows]
+    return [{"timestamp": ts, "inverterLimit": lim, "battery": b, "consumption": c, "voltage": v} for ts, lim, b, c, v in rows]
 
 @app.route("/data.json")
 def data_json():

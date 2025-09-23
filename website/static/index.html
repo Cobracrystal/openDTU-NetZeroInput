@@ -19,8 +19,9 @@
         const inverterLimit = data.map(d => d.inverterLimit);
         const battery = data.map(d => d.battery);
         const consumption = data.map(d => d.consumption);
+        const voltage = data.map(d => d.voltage);
 
-        return { labels, inverterLimit, battery, consumption };
+        return { labels, inverterLimit, battery, consumption, voltage };
     }
 
     async function drawChart() {
@@ -32,6 +33,7 @@
             chart.data.datasets[0].data = data.inverterLimit;
             chart.data.datasets[1].data = data.battery;
             chart.data.datasets[2].data = data.consumption;
+            chart.data.datasets[3].data = data.voltage;
             chart.update();
         } else {
             // Create chart for the first time
@@ -41,9 +43,10 @@
                 data: {
                     labels: data.labels,
                     datasets: [
-                        { label: 'Inverter Limit', data: data.inverterLimit, borderColor: 'red', fill: false },
-                        { label: 'Battery', data: data.battery, borderColor: 'green', fill: false },
-                        { label: 'Consumption', data: data.consumption, borderColor: 'blue', fill: false },
+                        { label: 'Wechselrichterlimit', data: data.inverterLimit, borderColor: 'red', fill: false },
+                        { label: 'Stromverbrauch', data: data.consumption, borderColor: 'blue', fill: false },
+                        { label: 'Batterieleistung', data: data.battery, borderColor: 'green', fill: false },
+                        { label: 'Batteriespannung', data: data.voltage, borderColor: 'cyan', fill: false },
                     ]
                 },
                 options: {
@@ -62,7 +65,8 @@
                             suggestedMax: Math.max(
                                 Math.max(...data.inverterLimit),
                                 Math.max(...data.battery),
-                                Math.max(...data.consumption)
+                                Math.max(...data.consumption),
+                                Math.max(...data.voltage)
                             ) * 1.1
                         }
                     }

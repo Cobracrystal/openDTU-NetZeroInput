@@ -38,7 +38,8 @@ CREATE TABLE IF NOT EXISTS measurements (
 	timestamp INTEGER PRIMARY KEY,
 	inverterLimit REAL,
 	battery REAL,
-	consumption REAL
+	consumption REAL,
+	voltage REAL
 )			   
 """)
 conn.commit()
@@ -59,13 +60,13 @@ def log(text):
 def getFileName():
 	return f'{(datetime.now() - timedelta(hours=6)).strftime("%Y-%m-%d")}'
 
-def saveSQL(inverterLimit: float, batteryPower: float, powerConsumption: float):
+def saveSQL(inverterLimit: float, batteryPower: float, powerConsumption: float, voltage: float):
 	timestamp = int(time.time())
 	try:
 		cursor.execute("""
-			INSERT INTO measurements (timestamp, inverterLimit, battery, consumption)
-			VALUES (?, ?, ?, ?)
-		""", (timestamp, inverterLimit, batteryPower, powerConsumption))
+			INSERT INTO measurements (timestamp, inverterLimit, battery, consumption, voltage)
+			VALUES (?, ?, ?, ?, ?)
+		""", (timestamp, inverterLimit, batteryPower, powerConsumption, voltage))
 		conn.commit()
 	except sqlite3.Error as e:
 		log(f'{Back.LIGHTRED_EX}{Fore.BLACK}Speichern fehlgeschlagen: {e}')
@@ -126,7 +127,7 @@ def update():
 		return False
 	
 	if storeData and ticks % (1000 * saveInterval / checkInterval) == 0:
-		saveSQL(old_limit_a, current_power_delivery, current_power_consumption)
+		saveSQL(old_limit_a, current_power_delivery, current_power_consumption, battery_voltage)
 	
 	if ticks % (update_interval / checkInterval) == 0:
 		if not inverterIsReachable:
