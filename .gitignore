@@ -1,9 +1,7 @@
-*.json
-*.pickle
-*log.txt
 __pycache__
-testing.py
 *env
 .envrc
 openDTUAuth.pw
 openDTUurl.dt
+testing.py
+data/*

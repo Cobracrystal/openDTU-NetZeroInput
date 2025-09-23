@@ -8,6 +8,7 @@ from colorama import Fore, Style, Back
 from colorama import init as colorama_init
 import re
 import os
+import sqlite3
 username = "admin"
 password = open(r"openDTUAuth.pw").read().strip()
 urlOpenDTU = "http://192.168.178.48"
@@ -18,17 +19,35 @@ longitude = 7.190650 # for calculating sunrise/sunset
 update_interval = 2000 # Time in milliseconds between each update
 checkInterval = 250 # Time in milliseconds between each check
 logInTextFile = True # Enable if you want all console output to be logged
-logData = True
+storeData = True # Whether to store received data in SQL
 battery_voltage_threshold = 48.5 # Threshold below which connection with battery is stopped.
-saveInterval = 900 # Time in seconds between each save
-os.chdir('data')
+saveInterval = 5 # Time in seconds between each write to database
+DB_FILE = "solar_data.db"
+
 colorama_init()
-###### TODO : CHECK IF SUNRISE/SUNSET, OPERATE BASED ON THAT. (INSTEAD OF CHECKING BATTERY CONNECTION)
+
+sun = suntime.Sun(lat=latitude, lon=longitude)
+sunset = sun.get_sunset_time(time_zone=tz.gettz("Europe/Berlin"))
+sunrise = sun.get_sunrise_time(time_zone=tz.gettz("Europe/Berlin"))
+
+os.chdir('data')
+conn = sqlite3.connect(DB_FILE, timeout=5)
+conn.execute("PRAGMA journal_mode=WAL;")
+conn.execute("""
+CREATE TABLE IF NOT EXISTS measurements (
+	timestamp INTEGER PRIMARY KEY,
+	inverterLimit REAL,
+	battery REAL,
+	consumption REAL
+)			   
+""")
+conn.commit()
+cursor = conn.cursor()
 
 def log(text):
 	fdate = datetime.now().strftime("%H:%M:%S")
 	print(f'{Fore.LIGHTYELLOW_EX}[{fdate}]{Style.RESET_ALL} {text}{Style.RESET_ALL}')
-	fName = getFileName("txt")
+	fName = getFileName() + '_log.txt'
 	if logInTextFile:
 		try:
 			f = open(fName, "a+")
@@ -37,52 +56,46 @@ def log(text):
 		finally:
 			f.close()
 
-def getFileName(fExt):
-	return f'{(datetime.now() - timedelta(hours=6)).strftime("%Y-%m-%d")}' + ('_data' if fExt == 'pickle' else '_log') + '.' + fExt
+def getFileName():
+	return f'{(datetime.now() - timedelta(hours=6)).strftime("%Y-%m-%d")}'
 
-sun = suntime.Sun(lat=latitude, lon=longitude)
-sunset = sun.get_sunset_time(time_zone=tz.gettz("Europe/Berlin"))
-sunrise = sun.get_sunrise_time(time_zone=tz.gettz("Europe/Berlin"))
+def saveSQL(inverterLimit: float, batteryPower: float, powerConsumption: float):
+	timestamp = int(time.time())
+	try:
+		cursor.execute("""
+			INSERT INTO measurements (timestamp, inverterLimit, battery, consumption)
+			VALUES (?, ?, ?, ?)
+		""", (timestamp, inverterLimit, batteryPower, powerConsumption))
+		conn.commit()
+	except sqlite3.Error as e:
+		log(f'{Back.LIGHTRED_EX}{Fore.BLACK}Speichern fehlgeschlagen: {e}')
+
 
 log(f'Programmstart: [{(datetime.now()).strftime("%Y-%m-%d %H:%M:%S")}]')
 log(f'Sonnenaufgang: {sunrise.time()}, Sonnenuntergang: {sunset.time()}')
 
+
 dtu = openDTU(urlOpenDTU, portOpenDTU, username, password)
-try:
-	main_inverter = dtu.inverterGetSerial(0)
-	max_power = dtu.inverterGetLimitConfig()[main_inverter]['max_power']
-except:
-	log(f"{Back.LIGHTRED_EX}{Fore.BLACK}Fehler{Style.RESET_ALL} bei der Datenabfrage von openDTU.")
+ticks = 1
+inverterWasReachable = True
+limitWasUnchanged = False
+batteryWasBelowThreshold = False
+batteryWasOn = True
+main_inverter = False
 
-if logData:
-	try:
-		arrTime, arrPowerLimit, arrBatteryPower, arrPowerConsumption = pickle.load(open(getFileName("pickle"), "rb"))
-		log(f'Lade bestehende Daten..')
-	except:
-		arrTime, arrPowerLimit, arrBatteryPower, arrPowerConsumption = [], [], [], []
-		log(f'Keine alten Daten gefunden. Starte..')
 
-def save():
-	fileName = getFileName("pickle")
-	try:
-		pickle.dump((arrTime, arrPowerLimit, arrBatteryPower, arrPowerConsumption), open(fileName, 'wb'))
-		log(f'{Back.LIGHTGREEN_EX}{Fore.BLACK}Daten in {fileName} gespeichert.{Style.RESET_ALL}')
-	except:
-		log(f'{Back.LIGHTRED_EX}{Fore.BLACK}Speichern fehlgeschlagen.')	
+log(f'Starte..')
+
 
 def update():
+	global ticks, inverterWasReachable, limitWasUnchanged, batteryWasBelowThreshold, batteryWasOn, main_inverter
+	ticks += 1
 	try:
-		update.ticks += 1
-	except:
-		update.ticks = 1
-		update.wasReachable = True
-		update.limitUnchanged = False
-		update.batteryBelowThreshold = False
-		update.batteryIsOn = True
-	try:
+		if not main_inverter:
+			main_inverter = dtu.inverterGetSerial(0)
 		inverter_limit_config = dtu.inverterGetLimitConfig()
 		inverter_runtime_info = dtu.inverterGetRuntimeInfo(main_inverter)
-		flagReachable = inverter_runtime_info['inverters'][0]['reachable']
+		inverterIsReachable = inverter_runtime_info['inverters'][0]['reachable']
 		flagProducing = inverter_runtime_info['inverters'][0]['producing']
 		for index in inverter_runtime_info['inverters'][0]['DC']:
 			if "batterie" in inverter_runtime_info['inverters'][0]['DC'][index]['name']['u'].lower():
@@ -94,11 +107,12 @@ def update():
 		current_dc_power_delivery = inverter_runtime_info['inverters'][0]['INV']['0']['Power DC']['v']
 		ac_dc_conversion_ratio = inverter_runtime_info['inverters'][0]['INV']['0']['Efficiency']['v'] / 100
 		current_power_delivery = inverter_runtime_info['total']['Power']['v']
+		max_power = inverter_limit_config[main_inverter]['max_power']
 		limit_set_status = inverter_limit_config[main_inverter]['limit_set_status']
 	except BaseException as e:
 		if type(e) == KeyboardInterrupt:
 			raise
-		log(f'{Back.LIGHTRED_EX}{Fore.BLACK}Fehler{Style.RESET_ALL} bei Datenabfrage von openDTU.')
+		log(f"{Back.LIGHTRED_EX}{Fore.BLACK}Fehler{Style.RESET_ALL} bei der Datenabfrage von openDTU.")
 		return False
 	
 	try:
@@ -111,50 +125,53 @@ def update():
 		log(f'{Back.LIGHTRED_EX}{Fore.BLACK}Fehler{Style.RESET_ALL} bei Datenabfrage von BitMeter.')
 		return False
 	
-	arrTime.append(datetime.now())
-	arrPowerLimit.append(old_limit_a)
-	arrBatteryPower.append(current_power_delivery)
-	arrPowerConsumption.append(current_power_consumption)
-	if logData and update.ticks % (1000 * saveInterval / checkInterval) == 0:
-		save()
+	if storeData and ticks % (1000 * saveInterval / checkInterval) == 0:
+		saveSQL(old_limit_a, current_power_delivery, current_power_consumption)
 	
-	if update.ticks % (update_interval / checkInterval) == 0:
-		if not flagReachable:
-			if update.wasReachable:
-				update.wasReachable = flagReachable
+	if ticks % (update_interval / checkInterval) == 0:
+		if not inverterIsReachable:
+			if inverterWasReachable:
+				inverterWasReachable = inverterIsReachable
 				log(f'Wechselrichter nicht erreichbar. Skippe Logs bis wieder erreichbar.')
+			else:
+				return False
 		elif limit_set_status == "Pending":
 			log(f'Wechselrichter verarbeitet noch das vorherige Limit. Skippe.')
 		else:
-			if not update.wasReachable:
+			if not inverterWasReachable:
 				log(f'Wechselrichter wieder erreichbar. Führe Skript normal weiter.')
-			update.wasReachable = flagReachable
+			inverterWasReachable = inverterIsReachable
 			if current_power_delivery > 0 and old_limit_a > 0: # no division by 0
 				limit_ratio = old_limit_a / current_power_delivery
 			else:
 				limit_ratio = 1
 
 			if batteryIsOn: # if battery is on, we adjust the limit to have net zero input into electricity grid
-				if not update.batteryIsOn:
+				if not batteryWasOn:
 					log(f'Batterie liefert ab jetzt Strom. Beginne mit Anpassung des Limits.')
-					update.batteryIsOn = True
+					batteryWasOn = True
 				if battery_voltage < battery_voltage_threshold: # if we fall below threshold, set limit to 0 and wait
+					if batteryWasBelowThreshold:
+						return False
 					log(f'Batteriestrom ist {battery_voltage}V, was niedriger als die festgelegte Grenze {battery_voltage_threshold}V ist.')
 					log(f'Limit wird bis Sonnenaufgang ({sunrise.time()}) auf 0 gesetzt.')
-					update.batteryBelowThreshold = True
+					batteryWasBelowThreshold = True
 					new_limit_a = 0
 					new_limit_r = 0
 				else:
+					if batteryWasBelowThreshold:
+						log(f'Batterie liefert wieder Strom. Skript wird fortgeführt.')
 					new_limit_a = round(limit_ratio * (current_power_consumption + current_power_delivery)) # works even if negative.
 					new_limit_r = round(100 * new_limit_a / max_power, ndigits=1)
+					batteryWasBelowThreshold = False
 			else: # if battery is off, we set the limit to 100 once and don't do anything after that.
-				if not update.batteryIsOn:
+				if not batteryWasOn:
 					return True
-				if old_limit_r != 100 or update.ticks * checkInterval // update_interval == 1:
+				if old_limit_r != 100 or ticks * checkInterval // update_interval == 1:
 					log(f'Batterie liefert keinen Strom. Setze Limit auf 100 und warte.')
 					new_limit_r = 100
 					new_limit_a = max_power
-					update.batteryIsOn = False
+					batteryWasOn = False
 			# adjust limits so that they stay between 0-100%
 			if new_limit_a > max_power:
 				new_limit_a = max_power
@@ -167,12 +184,12 @@ def update():
 			if (new_limit_a != old_limit_a):
 				log(f'Neues Limit: {Fore.LIGHTCYAN_EX}{new_limit_r}% / {new_limit_a}W{Style.RESET_ALL} ({round(new_limit_a/limit_ratio)} = {current_power_consumption} + {current_power_delivery})')
 				setLimitResponse = dtu.inverterSetLimitConfig(main_inverter, {"limit_type":0, "limit_value":new_limit_a})
-				update.limitUnchanged = False
+				limitWasUnchanged = False
 				if (setLimitResponse['type'] != "success"):
 					log(f'{Back.LIGHTRED_EX}{Fore.BLACK}Fehler{Style.RESET_ALL} beim setzen des Limits. Fehlernachricht: {setLimitResponse}')
-			elif not update.limitUnchanged:
+			elif not limitWasUnchanged:
 				log(f'Neues und altes Limit gleich, kein Update erforderlich.')
-				update.limitUnchanged = True
+				limitWasUnchanged = True
 	return True
 
 while True:
