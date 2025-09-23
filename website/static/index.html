@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Solar Dashboard</title>
+    <script src="/static/js/chart.js"></script>
+</head>
+<body>
+    <h2>Solar Dashboard</h2>
+    <canvas id="solarChart" width="800" height="400"></canvas>
+
+    <script>
+    let chart = null;
+
+    async function fetchData() {
+        const response = await fetch('/data.json');
+        const data = await response.json();
+
+        const labels = data.map(d => new Date(d.timestamp*1000).toLocaleTimeString());
+        const inverterLimit = data.map(d => d.inverterLimit);
+        const battery = data.map(d => d.battery);
+        const consumption = data.map(d => d.consumption);
+
+        return { labels, inverterLimit, battery, consumption };
+    }
+
+    async function drawChart() {
+        const data = await fetchData();
+
+        if (chart) {
+            // Update existing chart
+            chart.data.labels = data.labels;
+            chart.data.datasets[0].data = data.inverterLimit;
+            chart.data.datasets[1].data = data.battery;
+            chart.data.datasets[2].data = data.consumption;
+            chart.update();
+        } else {
+            // Create chart for the first time
+            const ctx = document.getElementById('solarChart').getContext('2d');
+            chart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: data.labels,
+                    datasets: [
+                        { label: 'Inverter Limit', data: data.inverterLimit, borderColor: 'red', fill: false },
+                        { label: 'Battery', data: data.battery, borderColor: 'green', fill: false },
+                        { label: 'Consumption', data: data.consumption, borderColor: 'blue', fill: false },
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    animation: false, // Disable animations for frequent updates
+                    scales: {
+                        x: {
+                            display: true,
+                            title: { display: true, text: 'Time' }
+                        },
+                        y: {
+                            display: true,
+                            title: { display: true, text: 'Power (W)' },
+                            // auto-scaling
+                            suggestedMin: 0,
+                            suggestedMax: Math.max(
+                                Math.max(...data.inverterLimit),
+                                Math.max(...data.battery),
+                                Math.max(...data.consumption)
+                            ) * 1.1
+                        }
+                    }
+                }
+            });
+        }
+    }
+
+    // Initial draw
+    drawChart();
+
+    // Refresh every 5 seconds
+    setInterval(drawChart, 5000);
+    </script>
+</body>
+</html>

@@ -1,8 +1,11 @@
-from flask import Flask, jsonify
+from flask import Flask, request, redirect, jsonify
+import os
 import sqlite3
 import time
 
-DB_FILE = "solar_data.db"
+DB_FILE_NAME = "solar_data.db"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DB_FILE = os.path.normpath(os.path.join(BASE_DIR, '..', 'data', DB_FILE_NAME))
 
 app = Flask(__name__)
 
