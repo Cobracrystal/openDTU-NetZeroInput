@@ -16,17 +16,13 @@ urlBitshake = "http://192.168.178.40"
 portOpenDTU = 80
 latitude = 50.988768 # for calculating sunrise/sunset
 longitude = 7.190650 # for calculating sunrise/sunset
-update_interval = 2 # Time in seconds between each update to dtu limit
+update_interval = 3 # Time in seconds between each update to dtu limit
 saveInterval = 5 # Time in seconds between each write to database. Datapoints are gotten every second regardless
 checkInterval = 1 # Time in seconds between each check
 logInTextFile = True # Enable if you want all console output to be logged
 storeData = True # Whether to store received data in SQL
 battery_voltage_threshold = 48.5 # Threshold below which connection with battery is stopped.
 DB_FILE = "solar_data.db"
-
-# TODO: SMOOTH PLOTLINES OF PAST DATA
-# TODO: MAKE GRAPH ZOOMABLE
-
 
 colorama_init()
 
@@ -93,6 +89,7 @@ batteryWasBelowThreshold = False
 batteryWasOff = False
 solarWasOn = True
 last_save_time = 0
+last_power_consumption = 0
 data_timestamps, data_oldLimits, data_powerDelivery, data_powerConsumption, data_batteryVoltage = [], [], [], [], []
 
 log(f'Starte..')
@@ -138,7 +135,11 @@ def update():
 	try:
 		bitMeter_data = requests.get(url = f'{urlBitshake}/cm?cmnd=status 10').json()
 		current_power_consumption = bitMeter_data["StatusSNS"]["LK13BE"]["Power"]
-		current_power_consumption = max(-5000, min(30000, current_power_consumption)) # data between -5000 and 30000
+		# remove single spikes
+		lastValue = last_power_consumption
+		last_power_consumption = current_power_consumption
+		if abs(current_power_consumption - lastValue) > 5000:
+			current_power_consumption = lastValue
 	except BaseException as e:
 		if type(e) == KeyboardInterrupt:
 			raise
@@ -151,10 +152,10 @@ def update():
 		data_powerConsumption.append(current_power_consumption)
 		data_batteryVoltage.append(battery_voltage)
 		last_save_time = now
-	if storeData and ticks % (saveInterval // checkInterval) == 0:
+	if storeData and ticks % (saveInterval / checkInterval) == 0:
 		saveSQL()
 	# Nur updaten wenn update_interval verstrichen ist
-	if ticks % (update_interval // checkInterval) != 0:
+	if ticks % (update_interval / checkInterval) != 0:
 		return True
 	# wechselrichter nicht erreichbar -> limit kann eh nicht gesetzt werden -> skip
 	if not inverterIsReachable:
