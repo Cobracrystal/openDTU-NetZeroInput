@@ -2,18 +2,43 @@
 <html>
 
 <head>
-	<title>Solar Dashboard</title>
-	<script src="/static/js/chart.js"></script>
-</head>
+	<meta charset="utf-8">
+	<title>Solardaten</title>
+	<style>
+		html, body {
+			margin: 0;
+			height: calc(100% - 40px);
+			display: flex;
+			flex-direction: column;
+		}
 
+		h2 {
+			margin: 0;
+			padding: 10px;
+		}
+
+		#solarData {
+			flex: 1;
+			width: 100%;
+		}
+	</style>
+</head>
 <body>
-	<h2>Solar Dashboard</h2>
-	<canvas id="solarChart" width="800" height="400"></canvas>
+	<h2>Solardaten</h2>
+	<script src="/static/js/chart.js"></script>
+	<script src="/static/js/hammer.js"></script>
+	<script src="/static/js/chartjs-plugin-zoom.min.js"></script>
+	<script src="/static/js/luxon.min.js"></script>
+	<script src="/static/js/chartjs-adapter-luxon@1.js"></script>
+	<canvas id="solarData"></canvas>
 
 	<script>
 		let chart = null;
 		let allData = [];
-		let lastTimestamp = 0; // last seen timestamp
+		let lastTimestamp = 0;
+		let firstTimestamp = 0;
+		let minX = 0;
+		let maxX = 0;
 		const WINDOW_SECONDS = 24 * 60 * 60;
 
 		async function fetchData() {
@@ -28,88 +53,121 @@
 
 		function formatData(data) {
 			return {
-				labels: data.map(d => new Date(d.timestamp * 1000).toLocaleTimeString()),
-				inverterLimit: data.map(d => d.inverterLimit),
-				battery: data.map(d => d.battery),
-				consumption: data.map(d => d.consumption),
-				voltage: data.map(d => d.voltage),
+				inverterLimit: data.map(d => ({ x: d.timestamp * 1000, y: d.inverterLimit })),
+				battery: data.map(d => ({ x: d.timestamp * 1000, y: d.battery })),
+				consumption: data.map(d => ({ x: d.timestamp * 1000, y: d.consumption })),
+				voltage: data.map(d => ({ x: d.timestamp * 1000, y: d.voltage }))
 			};
 		}
 
-		function trimOldData() {
-			const cutoff = lastTimestamp - WINDOW_SECONDS;
-			allData = allData.filter(d => d.timestamp >= cutoff);
+		async function pollUpdates(getAll = false) {
+			let newData
+			if (getAll) {
+				newData = await fetchData();
+			} else {
+				newData = await fetchDataUpdate();
+			}
+			// only append points with newer timestamp
+			const newPoints = newData.filter(d => d.timestamp > lastTimestamp);
+
+			if (newPoints.length > 0) {
+				lastTimestamp = newPoints[newPoints.length - 1].timestamp
+				const cutoff = lastTimestamp - WINDOW_SECONDS;
+				allData = allData.filter(d => d.timestamp >= cutoff);
+				allData = allData.concat(newPoints);
+				firstTimestamp = allData[0].timestamp
+				updateChart(formatData(allData));
+			}
 		}
 
-		function updateChart() {
-			const formatted = formatData(allData);
+		function updateChart(formatted) {
 
-			chart.data.labels = formatted.labels;
 			chart.data.datasets[0].data = formatted.inverterLimit;
 			chart.data.datasets[1].data = formatted.consumption;
 			chart.data.datasets[2].data = formatted.battery;
 			chart.data.datasets[3].data = formatted.voltage;
 
 			// update y-axis scaling
-			chart.options.scales.y.suggestedMax = Math.max(
-				Math.max(...formatted.inverterLimit),
-				Math.max(...formatted.battery),
-				Math.max(...formatted.consumption),
-				Math.max(...formatted.voltage)
+			chart.options.scales.y1.suggestedMax = Math.max(
+				Math.max(...formatted.inverterLimit.map(p => p.y)),
+				Math.max(...formatted.battery.map(p => p.y)),
+				Math.max(...formatted.consumption.map(p => p.y)),
+				Math.max(...formatted.voltage.map(p => p.y))
 			) * 1.1;
-
+			chart.options.plugins.zoom.limits.x = { 
+				min: (firstTimestamp - 120) * 1000, 
+				max: (lastTimestamp + 120) * 1000, 
+				minRange: 20000
+			};
 			chart.update();
 		}
 
 		async function initChart() {
-			allData = await fetchData();
-			lastTimestamp = allData[allData.length - 1].timestamp;
-
-			const formatted = formatData(allData);
-			const ctx = document.getElementById('solarChart').getContext('2d');
+			const ctx = document.getElementById('solarData').getContext('2d');
 			chart = new Chart(ctx, {
 				type: 'line',
 				data: {
-					labels: formatted.labels,
 					datasets: [
-						{ label: 'Wechselrichterlimit', data: formatted.inverterLimit, borderColor: 'red', fill: false },
-						{ label: 'Stromnetzbezug', data: formatted.consumption, borderColor: 'blue', fill: false },
-						{ label: 'Batterieleistung', data: formatted.battery, borderColor: 'green', fill: false },
-						{ label: 'Batteriespannung', data: formatted.voltage, borderColor: 'cyan', fill: false },
+						{ label: 'Wechselrichterlimit', data: [], borderColor: 'red', fill: false, unit: 'W', yAxisID: 'y1' },
+						{ label: 'Stromverbrauch', data: [], borderColor: 'blue', fill: false, unit: 'W', yAxisID: 'y1' },
+						{ label: 'Batterieleistung', data: [], borderColor: 'green', fill: false, unit: 'W', yAxisID: 'y1' },
+						{ label: 'Batteriespannung', data: [], borderColor: 'cyan', fill: false, unit: 'V', yAxisID: 'y2' }
 					]
 				},
 				options: {
 					responsive: true,
-					animation: false, // bad performance
+					animation: false,	// Required for performance
+					parsing: false,		// Required for performance
+					maintainAspectRatio: false,
+					plugins: {
+						decimation: {
+							enabled: true,
+							algorithm: 'lttb',
+							samples: 250,
+							threshold: 250
+						},
+						zoom: {
+							zoom: { wheel: { enabled: true, modifierKey: 'shift' }, pinch: { enabled: true }, mode: 'xy', overScaleMode: 'y' },
+							pan: { enabled: true, mode: 'xy', overScaleMode: 'y'},
+							limits: {
+								x: { min: 0, max: 100, minRange: 20000}
+							}
+						},
+						tooltip: {
+							callbacks: {
+								label: ctx => {
+									const y = ctx.raw.y ?? ctx.raw;
+									const unit = ctx.dataset.unit || '';
+									return `${ctx.dataset.label}: ${y} ${unit}`;
+								}
+							}
+						}
+					},
 					scales: {
-						x: { title: { display: true, text: 'Time' } },
-						y: {
-							title: { display: true, text: 'Power (W)' },
-							suggestedMin: 0, 
-							suggestedMax: Math.max(
-								Math.max(...formatted.inverterLimit),
-								Math.max(...formatted.battery),
-								Math.max(...formatted.consumption),
-								Math.max(...formatted.voltage)
-							) * 1.1
+						x: {
+							title: { display: true, text: 'Zeit' },
+							type: 'time',
+							ticks: {
+								autoSkip: true,
+								maxRotation: 0,
+								minRotation: 0
+							}
+						},
+						y1: {
+							position: 'left',
+							title: { display: true, text: 'Leistung' }
+						},
+						y2: {
+							position: 'right',
+							title: { display: true, text: 'Spannung' },
+							suggestedMin: 0,
+							suggestedMax: 55,
+							grid: { drawOnChartArea: false } // prevent double grid lines
 						}
 					}
 				}
 			});
-		}
-
-		async function pollUpdates() {
-			const newData = await fetchDataUpdate();
-
-			// only append points with newer timestamp
-			const newPoints = newData.filter(d => d.timestamp > lastTimestamp);
-
-			if (newPoints.length > 0) {
-				allData = allData.concat(newPoints);
-				lastTimestamp = allData[allData.length - 1].timestamp;
-				trimOldData();
-				updateChart();
-			}
+			await pollUpdates(true)
 		}
 
 		initChart().then(() => {
