@@ -95,7 +95,7 @@ data_timestamps, data_oldLimits, data_powerDelivery, data_powerConsumption, data
 log(f'Starte..')
 
 def update():
-	global ticks, main_inverter, inverterWasReachable, limitWasUnchanged, batteryWasBelowThreshold, batteryWasOff, last_save_time
+	global ticks, main_inverter, inverterWasReachable, limitWasUnchanged, batteryWasBelowThreshold, batteryWasOff, last_save_time, last_power_consumption
 	ticks += 1
 	now = int(time.time())
 	try:
