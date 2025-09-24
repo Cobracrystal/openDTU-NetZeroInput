@@ -18,7 +18,7 @@ latitude = 50.988768 # for calculating sunrise/sunset
 longitude = 7.190650 # for calculating sunrise/sunset
 update_interval = 2 # Time in seconds between each update to dtu limit
 saveInterval = 5 # Time in seconds between each write to database. Datapoints are gotten every second regardless
-checkInterval = 0.5 # Time in seconds between each check
+checkInterval = 1 # Time in seconds between each check
 logInTextFile = True # Enable if you want all console output to be logged
 storeData = True # Whether to store received data in SQL
 battery_voltage_threshold = 48.5 # Threshold below which connection with battery is stopped.
@@ -85,7 +85,7 @@ log(f'Sonnenaufgang: {sunrise.time()}, Sonnenuntergang: {sunset.time()}')
 
 # DO NOT EDIT. INITIALIZING VARIABLES
 dtu = openDTU(urlOpenDTU, portOpenDTU, username, password)
-ticks = 1
+ticks = 0
 main_inverter = False
 inverterWasReachable = True
 limitWasUnchanged = False
@@ -219,8 +219,8 @@ def update():
 	return True
 
 try:
+	next_time = time.time()
 	while True:
-		next_time = time.time()
 		flag = update()
 		if flag:
 			next_time += checkInterval
@@ -229,6 +229,8 @@ try:
 		sleep_time = next_time - time.time()
 		if sleep_time > 0:
 			time.sleep(sleep_time)
+		elif sleep_time < 10 and ticks % 30 == 0:
+			print(f"{Back.LIGHTRED_EX}{Fore.BLACK}Warnung{Style.RESET_ALL}: Skript hängt {abs(sleep_time)}s hinter Checks!")
 except KeyboardInterrupt:
 	log(f'Benutzerunterbrechung. Schließe...')
 	exit()
