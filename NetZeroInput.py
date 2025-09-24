@@ -162,10 +162,6 @@ def update():
 			inverterWasReachable = False
 			log(f'Wechselrichter nicht erreichbar. Skippe Logs bis wieder erreichbar.')
 		return False
-	# wechselrichter beschäftigt -> skip
-	if limit_set_status == "Pending":
-		log(f'Wechselrichter verarbeitet noch das vorherige Limit. Skippe.')
-		return True
 	# Wechselrichter ist erreichbar
 	if not inverterWasReachable:
 		log(f'Wechselrichter wieder erreichbar. Führe Skript normal weiter.')
@@ -208,6 +204,10 @@ def update():
 	log(f'Aktueller Stromverbrauch:\t{Fore.LIGHTRED_EX if current_power_consumption >= 0 else Fore.LIGHTGREEN_EX}{current_power_consumption}W')
 	log(f'Aktuelles Limit: {Fore.LIGHTWHITE_EX}{old_limit_r}% / {old_limit_a}W{Style.RESET_ALL}. Gesamtleistung: {Fore.LIGHTCYAN_EX}{current_power_delivery}W.')
 	if (new_limit_a != old_limit_a):
+		# wechselrichter beschäftigt -> skip
+		if limit_set_status == "Pending":
+			log(f'Neues Limit wäre {Fore.LIGHTCYAN_EX}{new_limit_r}% / {new_limit_a}W{Style.RESET_ALL}, aber Wechselrichter verarbeitet noch das vorherige Limit. Skippe.')
+			return True
 		log(f'Neues Limit: {Fore.LIGHTCYAN_EX}{new_limit_r}% / {new_limit_a}W{Style.RESET_ALL} ({round(new_limit_a/limit_ratio)} = {current_power_consumption} + {current_power_delivery})')
 		setLimitResponse = dtu.inverterSetLimitConfig(main_inverter, {"limit_type":0, "limit_value":new_limit_a})
 		limitWasUnchanged = False
