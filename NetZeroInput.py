@@ -21,8 +21,20 @@ checkInterval = 250 # Time in milliseconds between each check
 logInTextFile = True # Enable if you want all console output to be logged
 storeData = True # Whether to store received data in SQL
 battery_voltage_threshold = 48.5 # Threshold below which connection with battery is stopped.
-saveInterval = 5 # Time in seconds between each write to database
+saveInterval = 5000 # Time in milliseconds between each write to database
 DB_FILE = "solar_data.db"
+
+# TODO: SMOOTH PLOTLINES OF PAST DATA
+# TODO: MAKE GRAPH ZOOMABLE
+# TODO: /dataUpdate.json only last minute. On loading page -> full data.json
+
+
+
+
+
+
+
+
 
 colorama_init()
 
@@ -78,42 +90,51 @@ log(f'Sonnenaufgang: {sunrise.time()}, Sonnenuntergang: {sunset.time()}')
 
 dtu = openDTU(urlOpenDTU, portOpenDTU, username, password)
 ticks = 1
+main_inverter = False
 inverterWasReachable = True
 limitWasUnchanged = False
 batteryWasBelowThreshold = False
-batteryWasOn = True
-main_inverter = False
+batteryWasOff = False
+solarWasOn = True
 
 
 log(f'Starte..')
 
-
 def update():
-	global ticks, inverterWasReachable, limitWasUnchanged, batteryWasBelowThreshold, batteryWasOn, main_inverter
+	global ticks, main_inverter, inverterWasReachable, limitWasUnchanged, batteryWasBelowThreshold, batteryWasOff
 	ticks += 1
 	try:
 		if not main_inverter:
 			main_inverter = dtu.inverterGetSerial(0)
 		inverter_limit_config = dtu.inverterGetLimitConfig()
-		inverter_runtime_info = dtu.inverterGetRuntimeInfo(main_inverter)
-		inverterIsReachable = inverter_runtime_info['inverters'][0]['reachable']
-		# flagProducing = inverter_runtime_info['inverters'][0]['producing']
-		for index in inverter_runtime_info['inverters'][0]['DC']:
-			if "batterie" in inverter_runtime_info['inverters'][0]['DC'][index]['name']['u'].lower():
-				battery_power = inverter_runtime_info['inverters'][0]['DC'][index]['Power']['v']
-				battery_voltage = inverter_runtime_info['inverters'][0]['DC'][index]['Voltage']['v']
-		batteryIsOn = True if battery_power > 0 else False
-		old_limit_r = float(inverter_runtime_info['inverters'][0]['limit_relative'])
-		old_limit_a = round(inverter_runtime_info['inverters'][0]['limit_absolute'])
-		# current_dc_power_delivery = inverter_runtime_info['inverters'][0]['INV']['0']['Power DC']['v']
-		# ac_dc_conversion_ratio = inverter_runtime_info['inverters'][0]['INV']['0']['Efficiency']['v'] / 100
-		current_power_delivery = inverter_runtime_info['total']['Power']['v']
+		runtime_info = dtu.inverterGetRuntimeInfo(main_inverter)
+		inverter_info = runtime_info['inverters'][0]
+		inverterIsReachable = inverter_info['reachable']
+		inverterIsProducing = inverter_info['producing']
+		solar_power = 0
+		solar_voltage = 0
+		for index in inverter_info['DC']: # inverter sources
+			source = inverter_info['DC'][index]
+			if 'batterie' in source['name']['u'].lower():
+				battery_power = source['Power']['v']
+				battery_voltage = source['Voltage']['v']
+			else:
+				solar_power += source['Power']['v']
+				solar_voltage += source['Voltage']['v']
+		solar_voltage /= len(inverter_info['DC']) # average over all solar panels
+		solarIsOn = solar_voltage > 0
+		batteryIsOn = battery_power > 0
+		old_limit_r = float(inverter_info['limit_relative'])
+		old_limit_a = round(inverter_info['limit_absolute'])
+		current_dc_power_delivery = inverter_info['INV']['0']['Power DC']['v']
+		ac_dc_conversion_ratio = inverter_info['INV']['0']['Efficiency']['v'] / 100
+		current_power_delivery = runtime_info['total']['Power']['v']
 		max_power = inverter_limit_config[main_inverter]['max_power']
 		limit_set_status = inverter_limit_config[main_inverter]['limit_set_status']
 	except BaseException as e:
 		if type(e) == KeyboardInterrupt:
 			raise
-		log(f"{Back.LIGHTRED_EX}{Fore.BLACK}Fehler{Style.RESET_ALL} bei der Datenabfrage von openDTU.")
+		log(f"{Back.LIGHTRED_EX}{Fore.BLACK}Fehler{Style.RESET_ALL} bei der Datenabfrage von openDTU: {e}")
 		return False
 	
 	try:
@@ -126,75 +147,79 @@ def update():
 		log(f'{Back.LIGHTRED_EX}{Fore.BLACK}Fehler{Style.RESET_ALL} bei Datenabfrage von BitMeter.')
 		return False
 	
-	if storeData and ticks % (1000 * saveInterval / checkInterval) == 0:
+	if storeData and ticks % (saveInterval / checkInterval) == 0:
 		saveSQL(old_limit_a, current_power_delivery, current_power_consumption, battery_voltage)
-	
-	if ticks % (update_interval / checkInterval) == 0:
-		if not inverterIsReachable:
-			if inverterWasReachable:
-				inverterWasReachable = inverterIsReachable
-				log(f'Wechselrichter nicht erreichbar. Skippe Logs bis wieder erreichbar.')
-			else:
+	# Nur updaten wenn update_interval verstrichen ist
+	if ticks % (update_interval / checkInterval) != 0:
+		return True
+	# wechselrichter nicht erreichbar -> limit kann eh nicht gesetzt werden -> skip
+	if not inverterIsReachable:
+		if inverterWasReachable:
+			inverterWasReachable = False
+			log(f'Wechselrichter nicht erreichbar. Skippe Logs bis wieder erreichbar.')
+		return False
+	# wechselrichter beschäftigt -> skip
+	if limit_set_status == "Pending":
+		log(f'Wechselrichter verarbeitet noch das vorherige Limit. Skippe.')
+		return True
+	# Wechselrichter ist erreichbar
+	if not inverterWasReachable:
+		log(f'Wechselrichter wieder erreichbar. Führe Skript normal weiter.')
+		inverterWasReachable = True
+	# Wechselrichter gibt nicht old_limit_a Watt aus, sondern weniger, außer das limit ist 0.
+	if current_power_delivery > 0 and old_limit_a > 0:
+		limit_ratio = old_limit_a / current_power_delivery
+	else:
+		limit_ratio = 1
+	if batteryIsOn:
+		if batteryWasOff:
+			log(f'Batterie ist wieder an. Führe Skript normal weiter.')
+			batteryWasOff = False
+		# Unter grenze -> Limits auf 0
+		if battery_voltage < battery_voltage_threshold: 
+			if batteryWasBelowThreshold:
 				return False
-		elif limit_set_status == "Pending":
-			log(f'Wechselrichter verarbeitet noch das vorherige Limit. Skippe.')
+			batteryWasBelowThreshold = True
+			log(f'Batteriespannung ist {battery_voltage}V, was niedriger als die festgelegte Grenze {battery_voltage_threshold}V ist.')
+			log(f'Limit wird bis Sonnenaufgang ({sunrise.time()}) auf 0 gesetzt.')
+			new_limit_a = 0
+		# batterie an + gute spannung -> Berechne limit
 		else:
-			if not inverterWasReachable:
-				log(f'Wechselrichter wieder erreichbar. Führe Skript normal weiter.')
-			inverterWasReachable = inverterIsReachable
-			if current_power_delivery > 0 and old_limit_a > 0: # no division by 0
-				limit_ratio = old_limit_a / current_power_delivery
-			else:
-				limit_ratio = 1
-
-			if batteryIsOn: # if battery is on, we adjust the limit to have net zero input into electricity grid
-				if not batteryWasOn:
-					log(f'Batterie liefert ab jetzt Strom. Beginne mit Anpassung des Limits.')
-					batteryWasOn = True
-				if battery_voltage < battery_voltage_threshold: # if we fall below threshold, set limit to 0 and wait
-					if batteryWasBelowThreshold:
-						return False
-					log(f'Batteriestrom ist {battery_voltage}V, was niedriger als die festgelegte Grenze {battery_voltage_threshold}V ist.')
-					log(f'Limit wird bis Sonnenaufgang ({sunrise.time()}) auf 0 gesetzt.')
-					batteryWasBelowThreshold = True
-					new_limit_a = 0
-					new_limit_r = 0
-				else:
-					if batteryWasBelowThreshold:
-						log(f'Batterie liefert wieder Strom. Skript wird fortgeführt.')
-					new_limit_a = round(limit_ratio * (current_power_consumption + current_power_delivery)) # works even if negative.
-					new_limit_r = round(100 * new_limit_a / max_power, ndigits=1)
-					batteryWasBelowThreshold = False
-			else: # if battery is off, we set the limit to 100 once and don't do anything after that.
-				if not batteryWasOn:
-					return True
-				if old_limit_r != 100 or ticks * checkInterval // update_interval == 1:
-					log(f'Batterie liefert keinen Strom. Setze Limit auf 100 und warte.')
-					new_limit_r = 0 # 100
-					new_limit_a = 0 # max_power
-					batteryWasOn = False
-			# adjust limits so that they stay between 0-100%
-			if new_limit_a > max_power:
-				new_limit_a = max_power
-				new_limit_r = 100
-			elif new_limit_a  < 0:
-				new_limit_a = 0
-				new_limit_r = 0
-			log(f'Aktueller Stromverbrauch:\t{Fore.LIGHTRED_EX if current_power_consumption >= 0 else Fore.LIGHTGREEN_EX}{current_power_consumption}W')
-			log(f'Aktuelles Limit: {Fore.LIGHTWHITE_EX}{old_limit_r}% / {old_limit_a}W{Style.RESET_ALL}. Gesamtleistung: {Fore.LIGHTCYAN_EX}{current_power_delivery}W.')
-			if (new_limit_a != old_limit_a):
-				log(f'Neues Limit: {Fore.LIGHTCYAN_EX}{new_limit_r}% / {new_limit_a}W{Style.RESET_ALL} ({round(new_limit_a/limit_ratio)} = {current_power_consumption} + {current_power_delivery})')
-				setLimitResponse = dtu.inverterSetLimitConfig(main_inverter, {"limit_type":0, "limit_value":new_limit_a})
-				limitWasUnchanged = False
-				if (setLimitResponse['type'] != "success"):
-					log(f'{Back.LIGHTRED_EX}{Fore.BLACK}Fehler{Style.RESET_ALL} beim setzen des Limits. Fehlernachricht: {setLimitResponse}')
-			elif not limitWasUnchanged:
-				log(f'Neues und altes Limit gleich, kein Update erforderlich.')
-				limitWasUnchanged = True
+			if batteryWasBelowThreshold:
+				log(f'Batteriespannung wieder über Grenze. Skript wird fortgeführt.')
+				batteryWasBelowThreshold = False
+			new_limit_a = round(limit_ratio * (current_power_consumption + current_power_delivery)) # works even if negative.
+	else:
+		if batteryWasOff: # Batterie war bereits aus -> skip
+			return True
+		batteryWasOff = True
+		if solarIsOn:
+			log(f'Batterie ist aus, Solarpanele liefern Strom. Setze Limit auf 100 und warte.')
+			new_limit_a = max_power
+		else:
+			log(f'Batterie ist aus, Solarpanele liefern keinen Strom. Setze Limit auf 0 und warte.')
+			new_limit_a = 0
+	new_limit_a = max(0, min(max_power, new_limit_a)) # clamp between 0%, 100%
+	new_limit_r = round(100 * new_limit_a / max_power, ndigits=1)
+	log(f'Aktueller Stromverbrauch:\t{Fore.LIGHTRED_EX if current_power_consumption >= 0 else Fore.LIGHTGREEN_EX}{current_power_consumption}W')
+	log(f'Aktuelles Limit: {Fore.LIGHTWHITE_EX}{old_limit_r}% / {old_limit_a}W{Style.RESET_ALL}. Gesamtleistung: {Fore.LIGHTCYAN_EX}{current_power_delivery}W.')
+	if (new_limit_a != old_limit_a):
+		log(f'Neues Limit: {Fore.LIGHTCYAN_EX}{new_limit_r}% / {new_limit_a}W{Style.RESET_ALL} ({round(new_limit_a/limit_ratio)} = {current_power_consumption} + {current_power_delivery})')
+		setLimitResponse = dtu.inverterSetLimitConfig(main_inverter, {"limit_type":0, "limit_value":new_limit_a})
+		limitWasUnchanged = False
+		if (setLimitResponse['type'] != "success"):
+			log(f'{Back.LIGHTRED_EX}{Fore.BLACK}Fehler{Style.RESET_ALL} beim setzen des Limits. Fehlernachricht: {setLimitResponse}')
+	elif not limitWasUnchanged:
+		log(f'Neues und altes Limit gleich, kein Update erforderlich.')
+		limitWasUnchanged = True
 	return True
 
-while True:
-	if update():
-		time.sleep(checkInterval / 1000)
-	else:
-		time.sleep(checkInterval / 250)
+try:
+	while True:
+		if update():
+			time.sleep(checkInterval / 1000)
+		else:
+			time.sleep(checkInterval / 250)
+except KeyboardInterrupt:
+	log(f'Benutzerunterbrechung. Schließe...')
+	exit()
