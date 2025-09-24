@@ -1,80 +1,121 @@
 <!DOCTYPE html>
 <html>
+
 <head>
-    <title>Solar Dashboard</title>
-    <script src="/static/js/chart.js"></script>
+	<title>Solar Dashboard</title>
+	<script src="/static/js/chart.js"></script>
 </head>
+
 <body>
-    <h2>Solar Dashboard</h2>
-    <canvas id="solarChart" width="800" height="400"></canvas>
+	<h2>Solar Dashboard</h2>
+	<canvas id="solarChart" width="800" height="400"></canvas>
 
-    <script>
-    let chart = null;
+	<script>
+		let chart = null;
+		let allData = [];
+		let lastTimestamp = 0; // last seen timestamp
+		const WINDOW_SECONDS = 24 * 60 * 60;
 
-    async function fetchData() {
-        const response = await fetch('/data.json');
-        const data = await response.json();
+		async function fetchData() {
+			const response = await fetch('/data.json');
+			return await response.json();
+		}
 
-        const labels = data.map(d => new Date(d.timestamp*1000).toLocaleTimeString());
-        const inverterLimit = data.map(d => d.inverterLimit);
-        const battery = data.map(d => d.battery);
-        const consumption = data.map(d => d.consumption);
-        const voltage = data.map(d => d.voltage);
+		async function fetchDataUpdate() {
+			const response = await fetch('/dataupdate.json');
+			return await response.json();
+		}
 
-        return { labels, inverterLimit, battery, consumption, voltage };
-    }
+		function formatData(data) {
+			return {
+				labels: data.map(d => new Date(d.timestamp * 1000).toLocaleTimeString()),
+				inverterLimit: data.map(d => d.inverterLimit),
+				battery: data.map(d => d.battery),
+				consumption: data.map(d => d.consumption),
+				voltage: data.map(d => d.voltage),
+			};
+		}
 
-    async function drawChart() {
-        const data = await fetchData();
+		function trimOldData() {
+			const cutoff = lastTimestamp - WINDOW_SECONDS;
+			allData = allData.filter(d => d.timestamp >= cutoff);
+		}
 
-        if (chart) { // update chart if exists, else create it
-            chart.data.labels = data.labels;
-            chart.data.datasets[0].data = data.inverterLimit;
-            chart.data.datasets[1].data = data.consumption;
-            chart.data.datasets[2].data = data.battery;
-            chart.data.datasets[3].data = data.voltage;
-            chart.update();
-        } else {
-            const ctx = document.getElementById('solarChart').getContext('2d');
-            chart = new Chart(ctx, {
-                type: 'line',
-                data: {
-                    labels: data.labels,
-                    datasets: [
-                        { label: 'Wechselrichterlimit', data: data.inverterLimit, borderColor: 'red', fill: false },
-                        { label: 'Stromnetzbezug', data: data.consumption, borderColor: 'blue', fill: false },
-                        { label: 'Batterieleistung', data: data.battery, borderColor: 'green', fill: false },
-                        { label: 'Batteriespannung', data: data.voltage, borderColor: 'cyan', fill: false },
-                    ]
-                },
-                options: {
-                    responsive: true,
-                    animation: false, // bad performance
-                    scales: {
-                        x: {
-                            display: true,
-                            title: { display: true, text: 'Time' }
-                        },
-                        y: {
-                            display: true,
-                            title: { display: true, text: 'Power (W)' },
-                            suggestedMin: 0,
-                            suggestedMax: Math.max( // scale y-axis
-                                Math.max(...data.inverterLimit),
-                                Math.max(...data.battery),
-                                Math.max(...data.consumption),
-                                Math.max(...data.voltage)
-                            ) * 1.1
-                        }
-                    }
-                }
-            });
-        }
-    }
+		function updateChart() {
+			const formatted = formatData(allData);
 
-    drawChart();
+			chart.data.labels = formatted.labels;
+			chart.data.datasets[0].data = formatted.inverterLimit;
+			chart.data.datasets[1].data = formatted.consumption;
+			chart.data.datasets[2].data = formatted.battery;
+			chart.data.datasets[3].data = formatted.voltage;
 
-    setInterval(drawChart, 5000); // refresh 
-    </script>
+			// update y-axis scaling
+			chart.options.scales.y.suggestedMax = Math.max(
+				Math.max(...formatted.inverterLimit),
+				Math.max(...formatted.battery),
+				Math.max(...formatted.consumption),
+				Math.max(...formatted.voltage)
+			) * 1.1;
+
+			chart.update();
+		}
+
+		async function initChart() {
+			allData = await fetchData();
+			lastTimestamp = allData[allData.length - 1].timestamp;
+
+			const formatted = formatData(allData);
+			const ctx = document.getElementById('solarChart').getContext('2d');
+			chart = new Chart(ctx, {
+				type: 'line',
+				data: {
+					labels: formatted.labels,
+					datasets: [
+						{ label: 'Wechselrichterlimit', data: formatted.inverterLimit, borderColor: 'red', fill: false },
+						{ label: 'Stromnetzbezug', data: formatted.consumption, borderColor: 'blue', fill: false },
+						{ label: 'Batterieleistung', data: formatted.battery, borderColor: 'green', fill: false },
+						{ label: 'Batteriespannung', data: formatted.voltage, borderColor: 'cyan', fill: false },
+					]
+				},
+				options: {
+					responsive: true,
+					animation: false, // bad performance
+					scales: {
+						x: { title: { display: true, text: 'Time' } },
+						y: {
+							title: { display: true, text: 'Power (W)' },
+							suggestedMin: 0, 
+							suggestedMax: Math.max(
+								Math.max(...formatted.inverterLimit),
+								Math.max(...formatted.battery),
+								Math.max(...formatted.consumption),
+								Math.max(...formatted.voltage)
+							) * 1.1
+						}
+					}
+				}
+			});
+		}
+
+		async function pollUpdates() {
+			const newData = await fetchDataUpdate();
+
+			// only append points with newer timestamp
+			const newPoints = newData.filter(d => d.timestamp > lastTimestamp);
+
+			if (newPoints.length > 0) {
+				allData = allData.concat(newPoints);
+				lastTimestamp = allData[allData.length - 1].timestamp;
+				trimOldData();
+				updateChart();
+			}
+		}
+
+		initChart().then(() => {
+			setInterval(pollUpdates, 5000);
+		});
+	</script>
 </body>
+
 </html>

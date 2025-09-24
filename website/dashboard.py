@@ -9,12 +9,12 @@ DB_FILE = os.path.normpath(os.path.join(BASE_DIR, '..', 'data', DB_FILE_NAME))
 
 app = Flask(__name__)
 
-def fetch_data(hours=24):
+def fetch_data(minutes=1440):
     """Fetch last N hours of measurements from SQLite."""
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
     now = int(time.time())
-    since = now - hours * 3600
+    since = now - minutes * 60
     cursor.execute("""
         SELECT timestamp, inverterLimit, battery, consumption, voltage
         FROM measurements
@@ -28,7 +28,11 @@ def fetch_data(hours=24):
 
 @app.route("/data.json")
 def data_json():
-    return jsonify(fetch_data(hours=24))  # last 24 hours
+    return jsonify(fetch_data(minutes=1440))  # last 24 hours
+
+@app.route("/dataupdate.json")
+def dataupdate_json():
+    return jsonify(fetch_data(minutes=1))  # last 5 mins
 
 @app.route("/")
 def index():
