@@ -229,8 +229,8 @@ try:
 		sleep_time = next_time - time.time()
 		if sleep_time > 0:
 			time.sleep(sleep_time)
-		elif sleep_time < 10 and ticks % 30 == 0:
-			print(f"{Back.LIGHTRED_EX}{Fore.BLACK}Warnung{Style.RESET_ALL}: Skript hängt {abs(sleep_time)}s hinter Checks!")
+		elif sleep_time < -10 and ticks % 30 == 0:
+			print(f"{Back.LIGHTRED_EX}{Fore.BLACK}Warnung{Style.RESET_ALL}: Skript hängt {round(abs(sleep_time),ndigits=1)}s hinter Checks!")
 except KeyboardInterrupt:
 	log(f'Benutzerunterbrechung. Schließe...')
 	exit()
