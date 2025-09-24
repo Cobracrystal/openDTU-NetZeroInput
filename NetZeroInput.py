@@ -16,24 +16,16 @@ urlBitshake = "http://192.168.178.40"
 portOpenDTU = 80
 latitude = 50.988768 # for calculating sunrise/sunset
 longitude = 7.190650 # for calculating sunrise/sunset
-update_interval = 2000 # Time in milliseconds between each update
-checkInterval = 250 # Time in milliseconds between each check
+update_interval = 2 # Time in seconds between each update to dtu limit
+saveInterval = 5 # Time in seconds between each write to database. Datapoints are gotten every second regardless
+checkInterval = 0.5 # Time in seconds between each check
 logInTextFile = True # Enable if you want all console output to be logged
 storeData = True # Whether to store received data in SQL
 battery_voltage_threshold = 48.5 # Threshold below which connection with battery is stopped.
-saveInterval = 5000 # Time in milliseconds between each write to database
 DB_FILE = "solar_data.db"
 
 # TODO: SMOOTH PLOTLINES OF PAST DATA
 # TODO: MAKE GRAPH ZOOMABLE
-# TODO: /dataUpdate.json only last minute. On loading page -> full data.json
-
-
-
-
-
-
-
 
 
 colorama_init()
@@ -72,14 +64,18 @@ def log(text):
 def getFileName():
 	return f'{(datetime.now() - timedelta(hours=6)).strftime("%Y-%m-%d")}'
 
-def saveSQL(inverterLimit: float, batteryPower: float, powerConsumption: float, voltage: float):
-	timestamp = int(time.time())
+def saveSQL():
+	global data_timestamps, data_oldLimits, data_powerDelivery, data_powerConsumption, data_batteryVoltage
 	try:
-		cursor.execute("""
+		rows = list(zip(data_timestamps, data_oldLimits, data_powerDelivery, data_powerConsumption, data_batteryVoltage))
+		if not rows:
+			return
+		cursor.executemany("""
 			INSERT INTO measurements (timestamp, inverterLimit, battery, consumption, voltage)
 			VALUES (?, ?, ?, ?, ?)
-		""", (timestamp, inverterLimit, batteryPower, powerConsumption, voltage))
+		""", rows)
 		conn.commit()
+		data_timestamps, data_oldLimits, data_powerDelivery, data_powerConsumption, data_batteryVoltage = [], [], [], [], []
 	except sqlite3.Error as e:
 		log(f'{Back.LIGHTRED_EX}{Fore.BLACK}Speichern fehlgeschlagen: {e}')
 
@@ -87,7 +83,7 @@ def saveSQL(inverterLimit: float, batteryPower: float, powerConsumption: float, 
 log(f'Programmstart: [{(datetime.now()).strftime("%Y-%m-%d %H:%M:%S")}]')
 log(f'Sonnenaufgang: {sunrise.time()}, Sonnenuntergang: {sunset.time()}')
 
-
+# DO NOT EDIT. INITIALIZING VARIABLES
 dtu = openDTU(urlOpenDTU, portOpenDTU, username, password)
 ticks = 1
 main_inverter = False
@@ -96,13 +92,15 @@ limitWasUnchanged = False
 batteryWasBelowThreshold = False
 batteryWasOff = False
 solarWasOn = True
-
+last_save_time = 0
+data_timestamps, data_oldLimits, data_powerDelivery, data_powerConsumption, data_batteryVoltage = [], [], [], [], []
 
 log(f'Starte..')
 
 def update():
-	global ticks, main_inverter, inverterWasReachable, limitWasUnchanged, batteryWasBelowThreshold, batteryWasOff
+	global ticks, main_inverter, inverterWasReachable, limitWasUnchanged, batteryWasBelowThreshold, batteryWasOff, last_save_time
 	ticks += 1
+	now = int(time.time())
 	try:
 		if not main_inverter:
 			main_inverter = dtu.inverterGetSerial(0)
@@ -146,11 +144,17 @@ def update():
 			raise
 		log(f'{Back.LIGHTRED_EX}{Fore.BLACK}Fehler{Style.RESET_ALL} bei Datenabfrage von BitMeter.')
 		return False
-	
-	if storeData and ticks % (saveInterval / checkInterval) == 0:
-		saveSQL(old_limit_a, current_power_delivery, current_power_consumption, battery_voltage)
+	if storeData and last_save_time != now: # store data every second
+		data_timestamps.append(now)
+		data_oldLimits.append(old_limit_a)
+		data_powerDelivery.append(current_power_delivery)
+		data_powerConsumption.append(current_power_consumption)
+		data_batteryVoltage.append(battery_voltage)
+		last_save_time = now
+	if storeData and ticks % (saveInterval // checkInterval) == 0:
+		saveSQL()
 	# Nur updaten wenn update_interval verstrichen ist
-	if ticks % (update_interval / checkInterval) != 0:
+	if ticks % (update_interval // checkInterval) != 0:
 		return True
 	# wechselrichter nicht erreichbar -> limit kann eh nicht gesetzt werden -> skip
 	if not inverterIsReachable:
@@ -216,10 +220,15 @@ def update():
 
 try:
 	while True:
-		if update():
-			time.sleep(checkInterval / 1000)
+		next_time = time.time()
+		flag = update()
+		if flag:
+			next_time += checkInterval
 		else:
-			time.sleep(checkInterval / 250)
+			next_time += 4 * checkInterval
+		sleep_time = next_time - time.time()
+		if sleep_time > 0:
+			time.sleep(sleep_time)
 except KeyboardInterrupt:
 	log(f'Benutzerunterbrechung. Schließe...')
 	exit()
