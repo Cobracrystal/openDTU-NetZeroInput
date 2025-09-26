@@ -125,6 +125,8 @@ def update():
 		ac_dc_conversion_ratio = inverter_info['INV']['0']['Efficiency']['v'] / 100
 		current_power_delivery = runtime_info['total']['Power']['v']
 		max_power = inverter_limit_config[main_inverter]['max_power']
+		if max_power == 0:
+			raise ValueError('DTU returned inverter limit config with max_power = 0')
 		limit_set_status = inverter_limit_config[main_inverter]['limit_set_status']
 	except BaseException as e:
 		if type(e) == KeyboardInterrupt:
