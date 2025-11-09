@@ -22,6 +22,7 @@ checkInterval = 1 # Time in seconds between each check
 logInTextFile = True # Enable if you want all console output to be logged
 storeData = True # Whether to store received data in SQL
 battery_voltage_threshold = 48.5 # Threshold below which connection with battery is stopped.
+battery_voltage_thresholds = [51, 50, 50, 49]
 DB_FILE = "solar_data.db"
 
 colorama_init()
@@ -58,7 +59,7 @@ def log(text):
 			f.close()
 
 def getFileName():
-	return f'{(datetime.now() - timedelta(hours=6)).strftime("%Y-%m-%d")}'
+	return f'{(datetime.now()).strftime("%Y-%m-%d")}'
 
 def saveSQL():
 	global data_timestamps, data_oldLimits, data_powerDelivery, data_powerConsumption, data_batteryVoltage
