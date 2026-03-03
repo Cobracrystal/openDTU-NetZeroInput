@@ -11,7 +11,7 @@ import os
 import sqlite3
 username = "admin"
 password = open(r"openDTUAuth.pw").read().strip()
-urlOpenDTU = "http://192.168.178.48"
+urlOpenDTU = "http://192.168.178.31"
 urlBitshake = "http://192.168.178.40"
 portOpenDTU = 80
 latitude = 50.988768 # for calculating sunrise/sunset
@@ -237,4 +237,3 @@ try:
 			print(f"{Back.LIGHTRED_EX}{Fore.BLACK}Warnung{Style.RESET_ALL}: Skript hängt {round(abs(sleep_time),ndigits=1)}s hinter Checks!")
 except KeyboardInterrupt:
 	log(f'Benutzerunterbrechung. Schließe...')
-	exit()
