@@ -63,16 +63,16 @@ def getFileName():
 
 def saveSQL():
 	global data_timestamps, data_oldLimits, data_powerDelivery, data_powerConsumption, data_batteryVoltage
+	rows = list(zip(data_timestamps, data_oldLimits, data_powerDelivery, data_powerConsumption, data_batteryVoltage))
+	if not rows:
+		return
+	data_timestamps, data_oldLimits, data_powerDelivery, data_powerConsumption, data_batteryVoltage = [], [], [], [], []
 	try:
-		rows = list(zip(data_timestamps, data_oldLimits, data_powerDelivery, data_powerConsumption, data_batteryVoltage))
-		if not rows:
-			return
 		cursor.executemany("""
-			INSERT INTO measurements (timestamp, inverterLimit, battery, consumption, voltage)
+			INSERT OR IGNORE INTO measurements (timestamp, inverterLimit, battery, consumption, voltage)
 			VALUES (?, ?, ?, ?, ?)
 		""", rows)
 		conn.commit()
-		data_timestamps, data_oldLimits, data_powerDelivery, data_powerConsumption, data_batteryVoltage = [], [], [], [], []
 	except sqlite3.Error as e:
 		log(f'{Back.LIGHTRED_EX}{Fore.BLACK}Speichern fehlgeschlagen: {e}')
 
