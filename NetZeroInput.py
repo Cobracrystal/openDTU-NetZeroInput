@@ -1,3 +1,4 @@
+from enum import Enum, auto
 import time
 import suntime
 from datetime import datetime, timedelta
@@ -46,17 +47,31 @@ CREATE TABLE IF NOT EXISTS measurements (
 conn.commit()
 cursor = conn.cursor()
 
-def log(text):
+class LogStyle(Enum):
+	DEFAULT = auto()
+	WARNING = auto()
+	INFO = auto()
+	ERROR = auto()
+	
+def log(text, style=LogStyle.DEFAULT):
 	fdate = datetime.now().strftime("%H:%M:%S")
-	print(f'{Fore.LIGHTYELLOW_EX}[{fdate}]{Style.RESET_ALL} {text}{Style.RESET_ALL}')
-	fName = getFileName() + '_log.txt'
+	timestamp = f'{Fore.LIGHTYELLOW_EX}[{fdate}]{Style.RESET_ALL}'
+	formats = {
+		LogStyle.DEFAULT: f'{text}',
+		LogStyle.WARNING: f'{Back.LIGHTRED_EX}{Fore.BLACK}[WARNING]{Style.RESET_ALL} {text}',
+		LogStyle.INFO: f'{Back.LIGHTYELLOW_EX}{Fore.BLACK}[INFO]{Style.RESET_ALL} {text}',
+		LogStyle.ERROR: f'{Back.LIGHTRED_EX}{Fore.BLACK}[ERROR]{text}{Style.RESET_ALL}'
+	}
+	logLine = timestamp + ' ' + formats.get(style, LogStyle.DEFAULT) + Style.RESET_ALL
+	print(logLine)
 	if logInTextFile:
+		fName = getFileName() + '_log.txt'
 		try:
-			f = open(fName, "a+")
-			text = re.sub(r'\x1b\[\d+m', '', text)
-			f.write(f"[{fdate}] {text}" + '\n')
-		finally:
-			f.close()
+			with open(fName, "a+") as f:
+				clean_text = re.sub(r'\x1b\[[0-9;]*[mGKH]', '', logLine)
+				f.write(clean_text + '\n')
+		except Exception as e:
+			print(f'{timestamp} {Back.LIGHTRED_EX}{Fore.BLACK}ERROR: FAILED TO WRITE TO LOG FILE.{Style.RESET_ALL}')
 
 def getFileName():
 	return f'{(datetime.now()).strftime("%Y-%m-%d")}'
@@ -74,11 +89,11 @@ def saveSQL():
 		""", rows)
 		conn.commit()
 	except sqlite3.Error as e:
-		log(f'{Back.LIGHTRED_EX}{Fore.BLACK}Speichern fehlgeschlagen: {e}')
+		log(f'Speichern fehlgeschlagen: {e}', style=LogStyle.ERROR)
 
 
-log(f'Programmstart: [{(datetime.now()).strftime("%Y-%m-%d %H:%M:%S")}]')
-log(f'Sonnenaufgang: {sunrise.time()}, Sonnenuntergang: {sunset.time()}')
+log(f'Program Start: [{(datetime.now()).strftime("%Y-%m-%d %H:%M:%S")}]')
+log(f'Sunrise: {sunrise.time()}, Sunset: {sunset.time()}')
 
 # DO NOT EDIT. INITIALIZING VARIABLES
 dtu = openDTU(urlOpenDTU, portOpenDTU, username, password)
@@ -93,7 +108,7 @@ last_save_time = 0
 last_power_consumption = 0
 data_timestamps, data_oldLimits, data_powerDelivery, data_powerConsumption, data_batteryVoltage = [], [], [], [], []
 
-log(f'Starte..')
+log(f'Starting..')
 
 def update():
 	global ticks, main_inverter, inverterWasReachable, limitWasUnchanged, batteryWasBelowThreshold, batteryWasOff, last_save_time, last_power_consumption
@@ -132,7 +147,7 @@ def update():
 	except BaseException as e:
 		if type(e) == KeyboardInterrupt:
 			raise
-		log(f"{Back.LIGHTRED_EX}{Fore.BLACK}Fehler{Style.RESET_ALL} bei der Datenabfrage von openDTU: {e}")
+		log(f"Could not parse data from openDTU: {e}", LogStyle.ERROR)
 		return False
 	
 	try:
@@ -146,7 +161,7 @@ def update():
 	except BaseException as e:
 		if type(e) == KeyboardInterrupt:
 			raise
-		log(f'{Back.LIGHTRED_EX}{Fore.BLACK}Fehler{Style.RESET_ALL} bei Datenabfrage von BitMeter.')
+		log(f"Could not parse data from bitMeter: {e}", LogStyle.ERROR)
 		return False
 	if storeData and last_save_time != now: # store data every second
 		data_timestamps.append(now)
@@ -164,11 +179,11 @@ def update():
 	if not inverterIsReachable:
 		if inverterWasReachable:
 			inverterWasReachable = False
-			log(f'Wechselrichter nicht erreichbar. Skippe Logs bis wieder erreichbar.')
+			log('No connection to inverter. Skipping logs until reachable.', LogStyle.INFO)
 		return False
 	# Wechselrichter ist erreichbar
 	if not inverterWasReachable:
-		log(f'Wechselrichter wieder erreichbar. Führe Skript normal weiter.')
+		log('Reestablished connection to inverter. Continuing script.', LogStyle.INFO)
 		inverterWasReachable = True
 	# Wechselrichter gibt nicht old_limit_a Watt aus, sondern weniger, außer das limit ist 0.
 	if current_power_delivery > 0 and old_limit_a > 0:
@@ -177,20 +192,20 @@ def update():
 		limit_ratio = 1
 	if batteryIsOn:
 		if batteryWasOff:
-			log(f'Batterie ist wieder an. Führe Skript normal weiter.')
+			log('Battery is delivering electricity again. Continuing script.', LogStyle.INFO)
 			batteryWasOff = False
 		# Unter grenze -> Limits auf 0
 		if battery_voltage < battery_voltage_threshold: 
 			if batteryWasBelowThreshold:
 				return False
 			batteryWasBelowThreshold = True
-			log(f'Batteriespannung ist {battery_voltage}V, was niedriger als die festgelegte Grenze {battery_voltage_threshold}V ist.')
-			log(f'Limit wird bis Sonnenaufgang ({sunrise.time()}) auf 0 gesetzt.')
+			log(f'Battery voltage is {battery_voltage}V, which is below the set limit {battery_voltage_threshold}V.', LogStyle.INFO)
+			log(f'Setting Limit to 0 until Sunrise ({sunrise.time()}).', LogStyle.INFO)
 			new_limit_a = 0
 		# batterie an + gute spannung -> Berechne limit
 		else:
 			if batteryWasBelowThreshold:
-				log(f'Batteriespannung wieder über Grenze. Skript wird fortgeführt.')
+				log('Battery voltage is above threshold again. Continuing Script.', LogStyle.INFO)
 				batteryWasBelowThreshold = False
 			new_limit_a = round(limit_ratio * (current_power_consumption + current_power_delivery)) # works even if negative.
 	else:
@@ -198,27 +213,27 @@ def update():
 			return True
 		batteryWasOff = True
 		if solarIsOn:
-			log(f'Batterie ist aus, Solarpanele liefern Strom. Setze Limit auf 100 und warte.')
+			log('Battery is off, solar panels are delivering power. Setting Limit to 100 and sleep.', LogStyle.INFO)
 			new_limit_a = max_power
 		else:
-			log(f'Batterie ist aus, Solarpanele liefern keinen Strom. Setze Limit auf 0 und warte.')
+			log('Battery is off, solar panels are not delivering power. Setting Limit to 0 and sleep.', LogStyle.INFO)
 			new_limit_a = 0
 	new_limit_a = max(0, min(max_power, new_limit_a)) # clamp between 0%, 100%
 	new_limit_r = round(100 * new_limit_a / max_power, ndigits=1)
-	log(f'Aktueller Stromverbrauch:\t{Fore.LIGHTRED_EX if current_power_consumption >= 0 else Fore.LIGHTGREEN_EX}{current_power_consumption}W')
-	log(f'Aktuelles Limit: {Fore.LIGHTWHITE_EX}{old_limit_r}% / {old_limit_a}W{Style.RESET_ALL}. Gesamtleistung: {Fore.LIGHTCYAN_EX}{current_power_delivery}W.')
+	log(f'Current Power Consumption:\t{Fore.LIGHTRED_EX if current_power_consumption >= 0 else Fore.LIGHTGREEN_EX}{current_power_consumption}W')
+	log(f'Current Limit: {Fore.LIGHTWHITE_EX}{old_limit_r}% / {old_limit_a}W{Style.RESET_ALL}. Total Power: {Fore.LIGHTCYAN_EX}{current_power_delivery}W.')
 	if (new_limit_a != old_limit_a):
 		# wechselrichter beschäftigt -> skip
 		if limit_set_status == "Pending":
-			log(f'Neues Limit wäre {Fore.LIGHTCYAN_EX}{new_limit_r}% / {new_limit_a}W{Style.RESET_ALL}, aber Wechselrichter verarbeitet noch das vorherige Limit. Skippe.')
+			log(f'New Limit would be {Fore.LIGHTCYAN_EX}{new_limit_r}% / {new_limit_a}W{Style.RESET_ALL}, but inverter is busy. Skipping.', LogStyle.WARNING)
 			return True
-		log(f'Neues Limit: {Fore.LIGHTCYAN_EX}{new_limit_r}% / {new_limit_a}W{Style.RESET_ALL} ({round(new_limit_a/limit_ratio)} = {current_power_consumption} + {current_power_delivery})')
+		log(f'New Limit: {Fore.LIGHTCYAN_EX}{new_limit_r}% / {new_limit_a}W{Style.RESET_ALL} ({round(new_limit_a/limit_ratio)} = {current_power_consumption} + {current_power_delivery})')
 		setLimitResponse = dtu.inverterSetLimitConfig(main_inverter, {"limit_type":0, "limit_value":new_limit_a})
 		limitWasUnchanged = False
 		if (setLimitResponse['type'] != "success"):
-			log(f'{Back.LIGHTRED_EX}{Fore.BLACK}Fehler{Style.RESET_ALL} beim setzen des Limits. Fehlernachricht: {setLimitResponse}')
+			log(f'Could not set inverter limit: {setLimitResponse}', LogStyle.ERROR)
 	elif not limitWasUnchanged:
-		log(f'Neues und altes Limit gleich, kein Update erforderlich.')
+		log("Current and new Limit match, no update necessary.")
 		limitWasUnchanged = True
 	return True
 
@@ -234,6 +249,6 @@ try:
 		if sleep_time > 0:
 			time.sleep(sleep_time)
 		elif sleep_time < -10 and ticks % 30 == 0:
-			print(f"{Back.LIGHTRED_EX}{Fore.BLACK}Warnung{Style.RESET_ALL}: Skript hängt {round(abs(sleep_time),ndigits=1)}s hinter Checks!")
+			log(f"Script is {round(abs(sleep_time),ndigits=1)} seconds behind!", LogStyle.WARNING)
 except KeyboardInterrupt:
-	log(f'Benutzerunterbrechung. Schließe...')
+	log('User Interruption. Closing...', LogStyle.INFO)
