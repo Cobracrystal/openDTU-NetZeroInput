@@ -157,6 +157,7 @@ def update():
 		lastValue = last_power_consumption
 		last_power_consumption = current_power_consumption
 		if abs(current_power_consumption - lastValue) > 5000:
+			last_power_consumption = lastValue
 			current_power_consumption = lastValue
 	except BaseException as e:
 		if type(e) == KeyboardInterrupt:
@@ -179,12 +180,18 @@ def update():
 	if not inverterIsReachable:
 		if inverterWasReachable:
 			inverterWasReachable = False
-			log('No connection to inverter. Skipping logs until reachable.', LogStyle.INFO)
+			if batteryWasOff and not batteryIsOn:
+				log("No connection to inverter. Battery was and is offline, so no actions necessary.", LogStyle.INFO)
+			else:
+				log('No connection to inverter. Battery was on, so this is unusual. Skipping logs until reachable.', LogStyle.INFO)
 		return False
 	# Wechselrichter ist erreichbar
 	if not inverterWasReachable:
-		log('Reestablished connection to inverter. Continuing script.', LogStyle.INFO)
 		inverterWasReachable = True
+		if batteryWasOff and not batteryIsOn:
+			log("Reestablished connection to inverter. Battery is still off, continue waiting.", LogStyle.INFO)
+		else:
+			log('Reestablished connection to inverter. Continuing script.', LogStyle.INFO)
 	# Wechselrichter gibt nicht old_limit_a Watt aus, sondern weniger, außer das limit ist 0.
 	if current_power_delivery > 0 and old_limit_a > 0:
 		limit_ratio = old_limit_a / current_power_delivery
