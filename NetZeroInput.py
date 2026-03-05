@@ -175,8 +175,6 @@ def update():
 		if abs(power_consumption_now - power_consumption_last_tick_copy) > 10000:
 			if not abs(power_consumption_last_tick2_copy - power_consumption_last_tick_copy) > 10000: 
 				power_consumption_now = power_consumption_last_tick_copy
-		if abs(power_consumption_now):
-			print("hi")
 	except BaseException as e:
 		if type(e) == KeyboardInterrupt:
 			raise
