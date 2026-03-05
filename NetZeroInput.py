@@ -106,12 +106,13 @@ batteryWasOff = False
 solarWasOn = True
 last_save_time = 0
 power_consumption_last_tick = 0
+power_consumption_last_tick2 = 0
 data_timestamps, data_oldLimits, data_powerDelivery, data_powerConsumption, data_batteryVoltage = [], [], [], [], []
 
 log(f'Starting..')
 
 def update():
-	global ticks, main_inverter, inverterWasReachable, limitWasUnchanged, batteryWasBelowThreshold, batteryWasOff, last_save_time, power_consumption_last_tick
+	global ticks, main_inverter, inverterWasReachable, limitWasUnchanged, batteryWasBelowThreshold, batteryWasOff, last_save_time, power_consumption_last_tick, power_consumption_last_tick2
 	ticks += 1
 	now = int(time.time())
 	try:
