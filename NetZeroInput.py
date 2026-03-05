@@ -105,13 +105,13 @@ batteryWasBelowThreshold = False
 batteryWasOff = False
 solarWasOn = True
 last_save_time = 0
-last_power_consumption = 0
+power_consumption_last_tick = 0
 data_timestamps, data_oldLimits, data_powerDelivery, data_powerConsumption, data_batteryVoltage = [], [], [], [], []
 
 log(f'Starting..')
 
 def update():
-	global ticks, main_inverter, inverterWasReachable, limitWasUnchanged, batteryWasBelowThreshold, batteryWasOff, last_save_time, last_power_consumption
+	global ticks, main_inverter, inverterWasReachable, limitWasUnchanged, batteryWasBelowThreshold, batteryWasOff, last_save_time, power_consumption_last_tick
 	ticks += 1
 	now = int(time.time())
 	try:
@@ -152,13 +152,30 @@ def update():
 	
 	try:
 		bitMeter_data = requests.get(url = f'{urlBitshake}/cm?cmnd=status 10').json()
-		current_power_consumption = bitMeter_data["StatusSNS"]["LK13BE"]["Power"]
-		# remove single spikes
-		lastValue = last_power_consumption
-		last_power_consumption = current_power_consumption
-		if abs(current_power_consumption - lastValue) > 5000:
-			last_power_consumption = lastValue
-			current_power_consumption = lastValue
+		power_consumption_now = bitMeter_data["StatusSNS"]["LK13BE"]["Power"]
+		# remove unrealistic consumption erroneously reported by the bitshake reader
+		if power_consumption_now > 50000:
+			power_consumption_now = power_consumption_last_tick
+		# update sliding window
+		power_consumption_last_tick2_copy = power_consumption_last_tick2
+		power_consumption_last_tick_copy = power_consumption_last_tick
+		power_consumption_last_tick2 = power_consumption_last_tick
+		power_consumption_last_tick = power_consumption_now
+		# remove single spikers erroneously reported by the bitshake reader
+		# if values are incoming 550, 123, 200, 500, 10000 
+		# -> 10000 - 500 > 5000 CHECK
+		# -> 500 - 200 NOT > 5000 CHECK so correct that 10000 to 500. -> 550, 123, 200, 500, 500 
+		# then, if the next number is 11000
+		# -> 11000 - 10000 NOT > 5000 so first if check fails, the number goes through -> 550, 123, 200, 500, 500, 11000
+		# if the next number is 666 (so low again)
+		# -> abs(666 - 10000) > 5000 CHECK
+		# -> 10000 - 666 > 5000 NOPE so second if check FAILS, no correction is made and 500 goes through -> 550, 123, 200, 500, 500, 666: spike removed
+		# if the next number is >10k again, we have a problem. but its fine
+		if abs(power_consumption_now - power_consumption_last_tick_copy) > 10000:
+			if not abs(power_consumption_last_tick2_copy - power_consumption_last_tick_copy) > 10000: 
+				power_consumption_now = power_consumption_last_tick_copy
+		if abs(power_consumption_now):
+			print("hi")
 	except BaseException as e:
 		if type(e) == KeyboardInterrupt:
 			raise
@@ -168,7 +185,7 @@ def update():
 		data_timestamps.append(now)
 		data_oldLimits.append(old_limit_a)
 		data_powerDelivery.append(current_power_delivery)
-		data_powerConsumption.append(current_power_consumption)
+		data_powerConsumption.append(power_consumption_now)
 		data_batteryVoltage.append(battery_voltage)
 		last_save_time = now
 	if storeData and ticks % (saveInterval / checkInterval) == 0:
@@ -214,7 +231,7 @@ def update():
 			if batteryWasBelowThreshold:
 				log('Battery voltage is above threshold again. Continuing Script.', LogStyle.INFO)
 				batteryWasBelowThreshold = False
-			new_limit_a = round(limit_ratio * (current_power_consumption + current_power_delivery)) # works even if negative.
+			new_limit_a = round(limit_ratio * (power_consumption_now + current_power_delivery)) # works even if negative.
 	else:
 		if batteryWasOff: # Batterie war bereits aus -> skip
 			return True
@@ -227,14 +244,14 @@ def update():
 			new_limit_a = 0
 	new_limit_a = max(0, min(max_power, new_limit_a)) # clamp between 0%, 100%
 	new_limit_r = round(100 * new_limit_a / max_power, ndigits=1)
-	log(f'Current Power Consumption:\t{Fore.LIGHTRED_EX if current_power_consumption >= 0 else Fore.LIGHTGREEN_EX}{current_power_consumption}W')
+	log(f'Current Power Consumption:\t{Fore.LIGHTRED_EX if power_consumption_now >= 0 else Fore.LIGHTGREEN_EX}{power_consumption_now}W')
 	log(f'Current Limit: {Fore.LIGHTWHITE_EX}{old_limit_r}% / {old_limit_a}W{Style.RESET_ALL}. Total Power: {Fore.LIGHTCYAN_EX}{current_power_delivery}W.')
 	if (new_limit_a != old_limit_a):
 		# wechselrichter beschäftigt -> skip
 		if limit_set_status == "Pending":
 			log(f'New Limit would be {Fore.LIGHTCYAN_EX}{new_limit_r}% / {new_limit_a}W{Style.RESET_ALL}, but inverter is busy. Skipping.', LogStyle.WARNING)
 			return True
-		log(f'New Limit: {Fore.LIGHTCYAN_EX}{new_limit_r}% / {new_limit_a}W{Style.RESET_ALL} ({round(new_limit_a/limit_ratio)} = {current_power_consumption} + {current_power_delivery})')
+		log(f'New Limit: {Fore.LIGHTCYAN_EX}{new_limit_r}% / {new_limit_a}W{Style.RESET_ALL} ({round(new_limit_a/limit_ratio)} = {power_consumption_now} + {current_power_delivery})')
 		setLimitResponse = dtu.inverterSetLimitConfig(main_inverter, {"limit_type":0, "limit_value":new_limit_a})
 		limitWasUnchanged = False
 		if (setLimitResponse['type'] != "success"):
