@@ -22,7 +22,7 @@ saveInterval = 5 # Time in seconds between each write to database. Datapoints ar
 checkInterval = 1 # Time in seconds between each check
 logInTextFile = True # Enable if you want all console output to be logged
 storeData = True # Whether to store received data in SQL
-battery_voltage_threshold = 48.5 # Threshold below which connection with battery is stopped.
+battery_voltage_threshold = 49.6 # Threshold below which connection with battery is stopped. ; prev data: 48.5
 battery_voltage_thresholds = [51, 50, 50, 49]
 DB_FILE = "solar_data.db"
 
@@ -228,6 +228,8 @@ def update():
 		# batterie an + gute spannung -> Berechne limit
 		else:
 			if batteryWasBelowThreshold:
+				if old_limit_a == 0 and battery_voltage < battery_voltage_threshold + 2.5: # When battery is turned off, the voltage jumps by ~2.5V upwards immediately. In that case, the battery should obviously still stay off.
+					return False
 				log('Battery voltage is above threshold again. Continuing Script.', LogStyle.INFO)
 				batteryWasBelowThreshold = False
 			new_limit_a = round(limit_ratio * (power_consumption_now + current_power_delivery)) # works even if negative.
@@ -238,6 +240,7 @@ def update():
 		if solarIsOn:
 			log('Battery is off, solar panels are delivering power. Setting Limit to 100 and sleep.', LogStyle.INFO)
 			new_limit_a = max_power
+			batteryWasBelowThreshold = False # Reset on the new day
 		else:
 			log('Battery is off, solar panels are not delivering power. Setting Limit to 0 and sleep.', LogStyle.INFO)
 			new_limit_a = 0
