@@ -232,10 +232,10 @@ def update():
 			batteryWasOff = False
 		# calculate always. adjust later
 		new_limit_a = round(limit_ratio * (power_consumption_now + current_power_delivery)) # works even if negative.
-		if battery_voltage >= battery_voltage_thresholds[0]:
+		if battery_voltage >= battery_voltage_thresholds[2]:
 			if any(batteryWasBelowLastThresholds):
 				# When battery is turned off, the voltage jumps by ~2.5V upwards immediately. In that case, the battery should obviously still stay off.
-				if old_limit_a == 0 and battery_voltage < battery_voltage_thresholds[0] + 2.5: 
+				if old_limit_a == 0 and battery_voltage < battery_voltage_thresholds[2] + 2.5: 
 					return False
 				log('Battery voltage is above threshold again. Continuing Script.', LogStyle.INFO)
 				batteryWasBelowLastThresholds = [False] * len(batteryWasBelowLastThresholds)
