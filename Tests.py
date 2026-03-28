@@ -3,13 +3,13 @@ from openDTU import openDTU
 from termcolor import colored
 
 # Initialize the openDTU instance
-url = "http://192.168.178.48"
-port = 80
-# store the password in a file, otherwise directly add it here
 username = "admin"
-password = open(r"C:\Users\Simon\Desktop\programs\Files\openDTUAuth.pw").read().strip()
+password = open(r"openDTUAuth.pw").read().strip()
+urlOpenDTU = "http://192.168.178.31"
+urlBitshake = "http://192.168.178.40"
+portOpenDTU = 80
 
-dtu = openDTU(url, port, username, password)
+dtu = openDTU(urlOpenDTU, portOpenDTU, username, password)
 serial = dtu.inverterGetSerial()
 # List of functions to test
 functions_to_test = [
