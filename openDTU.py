@@ -2,7 +2,7 @@ from requests.auth import HTTPBasicAuth
 import requests, json
 
 class openDTU:
-	def __init__(self, url, port = 80, username = None, password = None):
+	def __init__(self, url, port = 80, username = None, password = None, timeout = 10):
 		self.name = "openDTU"
 		self.version = "0.0.1"
 		self.url = url
@@ -10,6 +10,7 @@ class openDTU:
 		self.baseURL = f'{self.url}:{self.port}/api/'
 		self.username = username
 		self.password = password
+		self.timeout = timeout
 
 	# ================ DIRECT API IMPLEMENTATIONS ================ #
 	# ALL COMMENTED FUNCTIONS ARE UNTESTED AND POTENTIALLY BROKEN
@@ -118,35 +119,36 @@ class openDTU:
 		return self.inverterGetList()["inverter"][index]["serial"]
 
 	def __callOpenDTUApi(self, method, endpoint, data= None, useAuth= False, extraHeaders= None):
-		if method == "GET":
-			if useAuth:
-				r = requests.get(
-					url = f'{self.baseURL}{endpoint}',
-					auth = HTTPBasicAuth(self.username, self.password),
-					headers = extraHeaders
-				)
+		kwargs = {
+			"url": f'{self.baseURL}{endpoint}',
+			"headers": extraHeaders,
+			"timeout": self.timeout
+		}
+		try:
+			if method == "GET":
+				if useAuth:
+					kwargs["auth"] = HTTPBasicAuth(self.username, self.password)
+				r = requests.get(**kwargs)
+			elif method == "POST":
+				kwargs["auth"] = HTTPBasicAuth(self.username, self.password)
+				if (endpoint == "device/config"):
+					kwargs["files"] = {"data": (None, json.dumps(data).encode('utf-8')) }
+					r = requests.post(**kwargs)
+				else:
+					headers = {'Content-Type': 'application/x-www-form-urlencoded'}
+					if extraHeaders:
+						headers.update(extraHeaders)
+					kwargs["headers"] = headers
+					kwargs["data"] = f'data={data}' # Format must be manually set.
+					r = requests.post(**kwargs)
 			else:
-				r = requests.get(url = f'{self.baseURL}{endpoint}', headers = extraHeaders)
-		elif method == "POST":
-			if (endpoint == "device/config"):
-				files = {"data": (None, json.dumps(data).encode('utf-8')) }
-				r = requests.post(
-					url=f'{self.baseURL}{endpoint}', 
-					auth=HTTPBasicAuth(self.username, self.password), 
-					files=files
-				)
-			else:
-				headers = {'Content-Type': 'application/x-www-form-urlencoded'}
-				if extraHeaders:
-					headers |= extraHeaders
-				r = requests.post(
-					url = f'{self.baseURL}{endpoint}',
-					headers = headers,
-					auth = HTTPBasicAuth(self.username, self.password), 
-					data = f'data={data}' # Format must be manually set.
-				)
-		else:
-			return None
+				return None
+		except requests.exceptions.Timeout as e:
+			print(f'Timeout on endpoint {endpoint}.')
+			raise e
+		except requests.exceptions.RequestException as e:
+			print(f'Network Error: {e}')
+			raise e
 		if r.status_code == 401: # Unauthorized. Response Text is empty, so return headers.
 			return r.headers
 		if r.headers["Content-Type"] == "application/json":

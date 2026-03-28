@@ -22,8 +22,8 @@ saveInterval = 5 # Time in seconds between each write to database. Datapoints ar
 checkInterval = 1 # Time in seconds between each check
 logInTextFile = True # Enable if you want all console output to be logged
 storeData = True # Whether to store received data in SQL
-battery_voltage_threshold = 49.6 # Threshold below which connection with battery is stopped. ; prev data: 48.5
-battery_voltage_thresholds = [51, 50, 50, 49]
+battery_voltage_thresholds = [48.8, 49.2, 49.6] # Threshold below which connection with battery is reduced.
+battery_voltage_threshold_caps = [0, 0.5, 0.75] # Multipliers for max_power (caps max power for inverted when corresponding threshold is reached)
 DB_FILE = "solar_data.db"
 
 colorama_init()
@@ -101,7 +101,7 @@ ticks = 0
 main_inverter = False
 inverterWasReachable = True
 limitWasUnchanged = False
-batteryWasBelowThreshold = False
+batteryWasBelowLastThresholds = [False, False, False]
 batteryWasOff = False
 solarWasOn = True
 last_save_time = 0
@@ -111,8 +111,11 @@ data_timestamps, data_oldLimits, data_powerDelivery, data_powerConsumption, data
 
 log(f'Starting..')
 
+def clamp(value, lower, upper):
+	return max(lower, min(upper, value))
+
 def update():
-	global ticks, main_inverter, inverterWasReachable, limitWasUnchanged, batteryWasBelowThreshold, batteryWasOff, last_save_time, power_consumption_last_tick, power_consumption_last_tick2
+	global ticks, main_inverter, inverterWasReachable, limitWasUnchanged, batteryWasBelowLastThresholds, batteryWasOff, last_save_time, power_consumption_last_tick, power_consumption_last_tick2
 	ticks += 1
 	now = int(time.time())
 	try:
@@ -142,9 +145,13 @@ def update():
 		ac_dc_conversion_ratio = inverter_info['INV']['0']['Efficiency']['v'] / 100
 		current_power_delivery = runtime_info['total']['Power']['v']
 		max_power = inverter_limit_config[main_inverter]['max_power']
-		if max_power == 0:
-			raise ValueError('DTU returned inverter limit config with max_power = 0')
 		limit_set_status = inverter_limit_config[main_inverter]['limit_set_status']
+	except requests.exceptions.Timeout:
+		log(f"OpenDTU request timed out.", LogStyle.ERROR)
+		return False
+	except requests.exceptions.RequestException as e:
+		log(f"Request to openDTU failed with exception {e}", LogStyle.ERROR)
+		return False
 	except BaseException as e:
 		if type(e) == KeyboardInterrupt:
 			raise
@@ -152,7 +159,7 @@ def update():
 		return False
 	
 	try:
-		bitMeter_data = requests.get(url = f'{urlBitshake}/cm?cmnd=status 10').json()
+		bitMeter_data = requests.get(url = f'{urlBitshake}/cm?cmnd=status 10', timeout=10).json()
 		power_consumption_now = bitMeter_data["StatusSNS"]["LK13BE"]["Power"]
 		# remove unrealistic consumption erroneously reported by the bitshake reader
 		if power_consumption_now > 50000:
@@ -175,6 +182,12 @@ def update():
 		if abs(power_consumption_now - power_consumption_last_tick_copy) > 10000:
 			if not abs(power_consumption_last_tick2_copy - power_consumption_last_tick_copy) > 10000: 
 				power_consumption_now = power_consumption_last_tick_copy
+	except requests.exceptions.Timeout:
+		log(f"BitMeter request timed out.", LogStyle.ERROR)
+		return False
+	except requests.exceptions.RequestException as e:
+		log(f"Request to BitMeter failed with exception {e}", LogStyle.ERROR)
+		return False
 	except BaseException as e:
 		if type(e) == KeyboardInterrupt:
 			raise
@@ -217,22 +230,28 @@ def update():
 		if batteryWasOff:
 			log('Battery is delivering electricity again. Continuing script.', LogStyle.INFO)
 			batteryWasOff = False
-		# Unter grenze -> Limits auf 0
-		if battery_voltage < battery_voltage_threshold: 
-			if batteryWasBelowThreshold:
-				return False
-			batteryWasBelowThreshold = True
-			log(f'Battery voltage is {battery_voltage}V, which is below the set limit {battery_voltage_threshold}V.', LogStyle.INFO)
-			log(f'Setting Limit to 0 until Sunrise ({sunrise.time()}).', LogStyle.INFO)
-			new_limit_a = 0
-		# batterie an + gute spannung -> Berechne limit
-		else:
-			if batteryWasBelowThreshold:
-				if old_limit_a == 0 and battery_voltage < battery_voltage_threshold + 2.5: # When battery is turned off, the voltage jumps by ~2.5V upwards immediately. In that case, the battery should obviously still stay off.
+		# calculate always. adjust later
+		new_limit_a = round(limit_ratio * (power_consumption_now + current_power_delivery)) # works even if negative.
+		if battery_voltage >= battery_voltage_thresholds[0]:
+			if any(batteryWasBelowLastThresholds):
+				# When battery is turned off, the voltage jumps by ~2.5V upwards immediately. In that case, the battery should obviously still stay off.
+				if old_limit_a == 0 and battery_voltage < battery_voltage_thresholds[0] + 2.5: 
 					return False
 				log('Battery voltage is above threshold again. Continuing Script.', LogStyle.INFO)
-				batteryWasBelowThreshold = False
-			new_limit_a = round(limit_ratio * (power_consumption_now + current_power_delivery)) # works even if negative.
+				batteryWasBelowLastThresholds = [False] * len(batteryWasBelowLastThresholds)
+		else:
+			for i in [0, 1, 2]:
+				if battery_voltage < battery_voltage_thresholds[i]:
+					if batteryWasBelowLastThresholds[i]: # If it already was below the threshold, we dont log anything and just continue.
+						if i == 0: # Except for the last threshold, then the limit was set to 0 and we abort immediately.
+							return False
+					else:
+						batteryWasBelowLastThresholds = [False] * len(batteryWasBelowLastThresholds)
+						batteryWasBelowLastThresholds[i] = True
+						log(f'Battery voltage ({battery_voltage}V) below threshold {i+1} ({battery_voltage_thresholds[i]}V).', LogStyle.INFO)
+						log(f'Capping Limit to {battery_voltage_threshold_caps[i] * 100}% until voltage changes.', LogStyle.INFO)
+					max_power *= battery_voltage_threshold_caps[i]
+					break
 	else:
 		if batteryWasOff: # Batterie war bereits aus -> skip
 			return True
@@ -240,12 +259,12 @@ def update():
 		if solarIsOn:
 			log('Battery is off, solar panels are delivering power. Setting Limit to 100 and sleep.', LogStyle.INFO)
 			new_limit_a = max_power
-			batteryWasBelowThreshold = False # Reset on the new day
+			batteryWasBelowLastThresholds = False # Reset on the new day
 		else:
 			log('Battery is off, solar panels are not delivering power. Setting Limit to 0 and sleep.', LogStyle.INFO)
 			new_limit_a = 0
-	new_limit_a = max(0, min(max_power, new_limit_a)) # clamp between 0%, 100%
-	new_limit_r = round(100 * new_limit_a / max_power, ndigits=1)
+	new_limit_a = clamp(new_limit_a, 0, max_power)
+	new_limit_r = round(100 * new_limit_a / max_power, ndigits=1) if max_power > 0 else 0 # necessary to avoid division by 0
 	log(f'Current Power Consumption:\t{Fore.LIGHTRED_EX if power_consumption_now >= 0 else Fore.LIGHTGREEN_EX}{power_consumption_now}W')
 	log(f'Current Limit: {Fore.LIGHTWHITE_EX}{old_limit_r}% / {old_limit_a}W{Style.RESET_ALL}. Total Power: {Fore.LIGHTCYAN_EX}{current_power_delivery}W.')
 	if (new_limit_a != old_limit_a):
