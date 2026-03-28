@@ -2,7 +2,7 @@ from enum import Enum, auto
 import time
 import suntime
 from datetime import datetime, timedelta
-import pickle
+from dataclasses import dataclass, asdict
 from openDTU import *
 from dateutil import tz
 from colorama import Fore, Style, Back
@@ -10,6 +10,8 @@ from colorama import init as colorama_init
 import re
 import os
 import sqlite3
+
+# CONFIGURATION
 username = "admin"
 password = open(r"openDTUAuth.pw").read().strip()
 urlOpenDTU = "http://192.168.178.31"
@@ -23,29 +25,25 @@ checkInterval = 1 # Time in seconds between each check
 logInTextFile = True # Enable if you want all console output to be logged
 storeData = True # Whether to store received data in SQL
 battery_voltage_thresholds = [48.8, 49.2, 49.6] # Threshold below which connection with battery is reduced.
-battery_voltage_threshold_caps = [0, 0.5, 0.75] # Multipliers for max_power (caps max power for inverted when corresponding threshold is reached)
+battery_voltage_threshold_caps = [0, 0.5, 0.75] # Multipliers for max_power (caps max power for inverter when corresponding threshold is reached)
+battery_voltage_recovery_buffers = [1.7, 0.7, 0.6] # Multipliers for max_power (caps max power for inverter when corresponding threshold is reached)
 DB_FILE = "solar_data.db"
 
-colorama_init()
 
-sun = suntime.Sun(lat=latitude, lon=longitude)
-sunset = sun.get_sunset_time(time_zone=tz.gettz("Europe/Berlin"))
-sunrise = sun.get_sunrise_time(time_zone=tz.gettz("Europe/Berlin"))
+@dataclass
+class DCInput:
+	index: int # solar panel or battery
+	name: str # name of the input (eg battery or west)
+	power: float # dc power delivery of the input
+	voltage: float # voltage of the input
 
-os.chdir('data')
-conn = sqlite3.connect(DB_FILE, timeout=5)
-conn.execute("PRAGMA journal_mode=WAL;")
-conn.execute("""
-CREATE TABLE IF NOT EXISTS measurements (
-	timestamp INTEGER PRIMARY KEY,
-	inverterLimit REAL,
-	battery REAL,
-	consumption REAL,
-	voltage REAL
-)
-""")
-conn.commit()
-cursor = conn.cursor()
+@dataclass
+class SolarMeasurements:
+	timestamp: int # current time
+	inverter_limit: float # the limit of the inverter as an absolute value
+	ac_power_output: float # the current AC power delivery
+	grid_consumption: float # the grid consumption value (if balanced, is around 0W)
+	dc_list: list[DCInput] # list of individual DC inputs (battery + solar panels)
 
 class LogStyle(Enum):
 	DEFAULT = auto()
@@ -53,157 +51,202 @@ class LogStyle(Enum):
 	INFO = auto()
 	ERROR = auto()
 	
+def getFileName():
+	return f'{(datetime.now()).strftime("%Y-%m-%d")}'
+
+# For multiline-styles, requires setting that style for each line.
 def log(text, style=LogStyle.DEFAULT):
 	fdate = datetime.now().strftime("%H:%M:%S")
-	timestamp = f'{Fore.LIGHTYELLOW_EX}[{fdate}]{Style.RESET_ALL}'
-	formats = {
-		LogStyle.DEFAULT: f'{text}',
-		LogStyle.WARNING: f'{Back.LIGHTRED_EX}{Fore.BLACK}[WARNING]{Style.RESET_ALL} {text}',
-		LogStyle.INFO: f'{Back.LIGHTYELLOW_EX}{Fore.BLACK}[INFO]{Style.RESET_ALL} {text}',
-		LogStyle.ERROR: f'{Back.LIGHTRED_EX}{Fore.BLACK}[ERROR]{text}{Style.RESET_ALL}'
+	timestamp_raw = f'[{fdate}]'
+	timestamp = f'{Fore.LIGHTYELLOW_EX}{timestamp_raw}{Style.RESET_ALL}'
+	BADEVENT_COLOR = f'{Back.LIGHTRED_EX}{Fore.BLACK}'
+	styles = {
+		LogStyle.DEFAULT: "",
+		LogStyle.WARNING: f'{BADEVENT_COLOR}[WARNING]{Style.RESET_ALL} ',
+		LogStyle.INFO: f'{Back.LIGHTYELLOW_EX}{Fore.BLACK}[INFO]{Style.RESET_ALL} ',
+		LogStyle.ERROR: f'{BADEVENT_COLOR}[ERROR] ' # the entire error message is red
 	}
-	logLine = timestamp + ' ' + formats.get(style, LogStyle.DEFAULT) + Style.RESET_ALL
-	print(logLine)
+	tags_raw = {
+		LogStyle.DEFAULT: "",
+		LogStyle.WARNING: f'[WARNING] ',
+		LogStyle.INFO: f'[INFO] ',
+		LogStyle.ERROR: f'[ERROR] '
+	}
+	prefix_width = len(timestamp_raw) + 1 + len(tags_raw.get(style, ""))
+	indent = " " * prefix_width
+	lines = str(text).splitlines()
+	logOutput = ""
+	for i, line in enumerate(lines):
+		if i == 0:
+			line_content = f"{timestamp} {styles.get(style, '')}{line}"
+		elif style is LogStyle.ERROR:
+			line_content = f"{indent}{BADEVENT_COLOR}{line}"
+		else:
+			line_content = f"{indent}{line}"
+		print(line_content + Style.RESET_ALL)
+		logOutput += line_content + '\n'
 	if logInTextFile:
 		fName = getFileName() + '_log.txt'
 		try:
 			with open(fName, "a+") as f:
-				clean_text = re.sub(r'\x1b\[[0-9;]*[mGKH]', '', logLine)
-				f.write(clean_text + '\n')
+				clean_text = re.sub(r'\x1b\[[0-9;]*[mGKH]', '', logOutput)
+				f.write(clean_text)
 		except Exception as e:
-			print(f'{timestamp} {Back.LIGHTRED_EX}{Fore.BLACK}ERROR: FAILED TO WRITE TO LOG FILE.{Style.RESET_ALL}')
-
-def getFileName():
-	return f'{(datetime.now()).strftime("%Y-%m-%d")}'
+			print(f'{timestamp} {BADEVENT_COLOR}ERROR: FAILED TO WRITE TO LOG FILE.{Style.RESET_ALL}')
 
 def saveSQL():
-	global data_timestamps, data_oldLimits, data_powerDelivery, data_powerConsumption, data_batteryVoltage
-	rows = list(zip(data_timestamps, data_oldLimits, data_powerDelivery, data_powerConsumption, data_batteryVoltage))
-	if not rows:
+	global data_buffer
+	if not data_buffer:
 		return
-	data_timestamps, data_oldLimits, data_powerDelivery, data_powerConsumption, data_batteryVoltage = [], [], [], [], []
+	rows_measurement = []
+	rows_dc_input = []
+	for dataPoint in data_buffer:
+		rows_measurement.append((
+			dataPoint.timestamp, 
+            dataPoint.inverter_limit, 
+            dataPoint.ac_power_output, 
+            dataPoint.grid_consumption
+		))
+		for dc in dataPoint.dc_list:
+			rows_dc_input.append((
+				dataPoint.timestamp,
+				dc.index,
+				dc.name,
+				dc.power,
+				dc.voltage
+			))
 	try:
-		cursor.executemany("""
-			INSERT OR IGNORE INTO measurements (timestamp, inverterLimit, battery, consumption, voltage)
-			VALUES (?, ?, ?, ?, ?)
-		""", rows)
+		cursor.executemany("INSERT OR IGNORE INTO measurements VALUES (?, ?, ?, ?)", rows_measurement)
+		cursor.executemany("INSERT OR IGNORE INTO dc_inputs VALUES (?, ?, ?, ?, ?)", rows_dc_input)
 		conn.commit()
 	except sqlite3.Error as e:
 		log(f'Speichern fehlgeschlagen: {e}', style=LogStyle.ERROR)
-
-
-log(f'Program Start: [{(datetime.now()).strftime("%Y-%m-%d %H:%M:%S")}]')
-log(f'Sunrise: {sunrise.time()}, Sunset: {sunset.time()}')
-
-# DO NOT EDIT. INITIALIZING VARIABLES
-dtu = openDTU(urlOpenDTU, portOpenDTU, username, password)
-ticks = 0
-main_inverter = False
-inverterWasReachable = True
-limitWasUnchanged = False
-batteryWasBelowLastThresholds = [False, False, False]
-batteryWasOff = False
-solarWasOn = True
-last_save_time = 0
-power_consumption_last_tick = 0
-power_consumption_last_tick2 = 0
-data_timestamps, data_oldLimits, data_powerDelivery, data_powerConsumption, data_batteryVoltage = [], [], [], [], []
-
-log(f'Starting..')
+		conn.rollback()
+	finally:
+		data_buffer.clear()
 
 def clamp(value, lower, upper):
 	return max(lower, min(upper, value))
 
-def update():
-	global ticks, main_inverter, inverterWasReachable, limitWasUnchanged, batteryWasBelowLastThresholds, batteryWasOff, last_save_time, power_consumption_last_tick, power_consumption_last_tick2
-	ticks += 1
-	now = int(time.time())
+def validate_consumption(new_value):
+	global grid_history
+	# these values are ALWAYS false, so don't bother updating history or any other checks
+	if new_value > 50000 or new_value < -10000:
+		log(f"Ignoring impossible BitMeter reading: {new_value}W", LogStyle.WARNING)
+		return grid_history[-1]
+	last_value = grid_history[-1]
+	# update sliding window
+	grid_history.append(new_value)
+	if len(grid_history) > 3: # in theory this should always be true. in theory.
+		grid_history.pop(0)
+	if abs(new_value - last_value) < 2000: # should be correct
+		return new_value
+	else: # unsure
+		return sorted(grid_history)[1]
+	
+def get_openDTU_data():
+	global main_inverter
 	try:
-		if not main_inverter:
+		# make request
+		if main_inverter is None:
 			main_inverter = dtu.inverterGetSerial(0)
 		inverter_limit_config = dtu.inverterGetLimitConfig()
 		runtime_info = dtu.inverterGetRuntimeInfo(main_inverter)
-		inverter_info = runtime_info['inverters'][0]
-		inverterIsReachable = inverter_info['reachable']
-		inverterIsProducing = inverter_info['producing']
-		solar_power = 0
-		solar_voltage = 0
-		for index in inverter_info['DC']: # inverter sources
-			source = inverter_info['DC'][index]
-			if 'batterie' in source['name']['u'].lower():
-				battery_power = source['Power']['v']
-				battery_voltage = source['Voltage']['v']
-			else:
-				solar_power += source['Power']['v']
-				solar_voltage += source['Voltage']['v']
-		solar_voltage /= len(inverter_info['DC']) # average over all solar panels
-		solarIsOn = solar_voltage > 0
-		batteryIsOn = battery_power > 0
-		old_limit_r = float(inverter_info['limit_relative'])
-		old_limit_a = round(inverter_info['limit_absolute'])
-		current_dc_power_delivery = inverter_info['INV']['0']['Power DC']['v']
-		ac_dc_conversion_ratio = inverter_info['INV']['0']['Efficiency']['v'] / 100
-		current_power_delivery = runtime_info['total']['Power']['v']
-		max_power = inverter_limit_config[main_inverter]['max_power']
-		limit_set_status = inverter_limit_config[main_inverter]['limit_set_status']
+		return inverter_limit_config, runtime_info
 	except requests.exceptions.Timeout:
 		log(f"OpenDTU request timed out.", LogStyle.ERROR)
-		return False
+		return None
 	except requests.exceptions.RequestException as e:
 		log(f"Request to openDTU failed with exception {e}", LogStyle.ERROR)
-		return False
+		return None
 	except BaseException as e:
 		if type(e) == KeyboardInterrupt:
 			raise
 		log(f"Could not parse data from openDTU: {e}", LogStyle.ERROR)
-		return False
+		return None
 	
+def get_BitMeter_data():
 	try:
-		bitMeter_data = requests.get(url = f'{urlBitshake}/cm?cmnd=status 10', timeout=10).json()
-		power_consumption_now = bitMeter_data["StatusSNS"]["LK13BE"]["Power"]
-		# remove unrealistic consumption erroneously reported by the bitshake reader
-		if power_consumption_now > 50000:
-			power_consumption_now = power_consumption_last_tick
-		# update sliding window
-		power_consumption_last_tick2_copy = power_consumption_last_tick2
-		power_consumption_last_tick_copy = power_consumption_last_tick
-		power_consumption_last_tick2 = power_consumption_last_tick
-		power_consumption_last_tick = power_consumption_now
-		# remove single spikers erroneously reported by the bitshake reader
-		# if values are incoming 550, 123, 200, 500, 10000 
-		# -> 10000 - 500 > 5000 CHECK
-		# -> 500 - 200 NOT > 5000 CHECK so correct that 10000 to 500. -> 550, 123, 200, 500, 500 
-		# then, if the next number is 11000
-		# -> 11000 - 10000 NOT > 5000 so first if check fails, the number goes through -> 550, 123, 200, 500, 500, 11000
-		# if the next number is 666 (so low again)
-		# -> abs(666 - 10000) > 5000 CHECK
-		# -> 10000 - 666 > 5000 NOPE so second if check FAILS, no correction is made and 500 goes through -> 550, 123, 200, 500, 500, 666: spike removed
-		# if the next number is >10k again, we have a problem. but its fine
-		if abs(power_consumption_now - power_consumption_last_tick_copy) > 10000:
-			if not abs(power_consumption_last_tick2_copy - power_consumption_last_tick_copy) > 10000: 
-				power_consumption_now = power_consumption_last_tick_copy
+		response = requests.get(url = f'{urlBitshake}/cm?cmnd=status 10', timeout=10)
+		if response.status_code == 200:
+			bitMeter_data = response.json()
+			return bitMeter_data["StatusSNS"]["LK13BE"]["Power"]
+		else:
+			log(f"BitMeter returned Status Code {response.status_code}", LogStyle.ERROR)
+			return None
 	except requests.exceptions.Timeout:
 		log(f"BitMeter request timed out.", LogStyle.ERROR)
-		return False
+		return None
 	except requests.exceptions.RequestException as e:
 		log(f"Request to BitMeter failed with exception {e}", LogStyle.ERROR)
-		return False
+		return None
 	except BaseException as e:
 		if type(e) == KeyboardInterrupt:
 			raise
-		log(f"Could not parse data from bitMeter: {e}", LogStyle.ERROR)
+		return None
+	
+def update():
+	global ticks, main_inverter, inverterWasReachable, limitWasUnchanged, batteryWasBelowLastThresholds, batteryWasOff, last_save_time
+	ticks += 1
+	now = int(time.time())
+
+	# Get DTU Data
+	openDTU_data = get_openDTU_data()
+	if openDTU_data is None:
 		return False
+	inverter_limit_config, runtime_info = openDTU_data
+	# get DC Inputs
+	solarIsOn = False
+	solar_power, battery_power, battery_voltage = 0, 0, 0
+	current_dc_inputs = []
+	inverter_info = runtime_info['inverters'][0]
+	for index, source in inverter_info['DC'].items():
+		power = source['Power']['v']
+		voltage = source['Voltage']['v']
+		name = source['name']['u']
+		current_dc_inputs.append(DCInput(
+			index=int(index),
+			name=name,
+			power=power,
+			voltage=voltage
+		))
+		if 'batterie' in name.lower():
+			battery_power = power
+			battery_voltage = voltage
+		else:
+			solar_power += power
+			if voltage > 2:
+				solarIsOn = True
+	batteryIsOn = battery_power > 0
+	old_limit_r = float(inverter_info['limit_relative'])
+	old_limit_a = round(inverter_info['limit_absolute'])
+	# total_dc_power_input = inverter_info['INV']['0']['Power DC']['v'] # EQUIVALENT TO SUMMING OVER dc_input
+	# ac_dc_conversion_ratio = inverter_info['INV']['0']['Efficiency']['v'] / 100 # EQUIVALENT TO ac_delivery / dc_delivery
+	ac_power_output = runtime_info['total']['Power']['v'] # AC power output
+	# total_power_delivery = inverter_info['AC']['0']['Power']['v'] # equivalent to above since only one AC output
+	max_power = inverter_limit_config[main_inverter]['max_power']
+	# inverterIsProducing = inverter_info['producing']
+	inverterIsReachable = inverter_info['reachable']
+	limit_set_status = inverter_limit_config[main_inverter]['limit_set_status']
+
+	# Bitmeter data
+	grid_power_consumption = get_BitMeter_data()
+	if grid_power_consumption is None: # request threw exception -> return. Do not use try so that keyboard interrupts all the way up)
+		return False
+	grid_power_consumption = validate_consumption(grid_power_consumption)
 	if storeData and last_save_time != now: # store data every second
-		data_timestamps.append(now)
-		data_oldLimits.append(old_limit_a)
-		data_powerDelivery.append(current_power_delivery)
-		data_powerConsumption.append(power_consumption_now)
-		data_batteryVoltage.append(battery_voltage)
+		data_buffer.append(SolarMeasurements(
+			timestamp=now,
+			inverter_limit=old_limit_a,
+			ac_power_output=ac_power_output,
+			grid_consumption=grid_power_consumption,
+			dc_list=current_dc_inputs
+		))
 		last_save_time = now
-	if storeData and ticks % (saveInterval / checkInterval) == 0:
+	if storeData and ticks % (saveInterval // checkInterval) == 0:
 		saveSQL()
 	# Nur updaten wenn update_interval verstrichen ist
-	if ticks % (update_interval / checkInterval) != 0:
+	if ticks % (update_interval // checkInterval) != 0:
 		return True
 	# wechselrichter nicht erreichbar -> limit kann eh nicht gesetzt werden -> skip
 	if not inverterIsReachable:
@@ -222,57 +265,64 @@ def update():
 		else:
 			log('Reestablished connection to inverter. Continuing script.', LogStyle.INFO)
 	# Wechselrichter gibt nicht old_limit_a Watt aus, sondern weniger, außer das limit ist 0.
-	if current_power_delivery > 0 and old_limit_a > 0:
-		limit_ratio = old_limit_a / current_power_delivery
+	if ac_power_output > 0 and old_limit_a > 0:
+		limit_ratio = old_limit_a / ac_power_output
 	else:
 		limit_ratio = 1
 	if batteryIsOn:
 		if batteryWasOff:
 			log('Battery is delivering electricity again. Continuing script.', LogStyle.INFO)
 			batteryWasOff = False
-		# calculate always. adjust later
-		new_limit_a = round(limit_ratio * (power_consumption_now + current_power_delivery)) # works even if negative.
-		if battery_voltage >= battery_voltage_thresholds[2]:
-			if any(batteryWasBelowLastThresholds):
-				# When battery is turned off, the voltage jumps by ~2.5V upwards immediately. In that case, the battery should obviously still stay off.
-				if old_limit_a == 0 and battery_voltage < battery_voltage_thresholds[2] + 2.5: 
+		# Calculate base limit. Will be clamped to max_power later.
+		new_limit_a = round(limit_ratio * (grid_power_consumption + ac_power_output)) # works even if negative.
+		
+		active_threshold_index = -1
+		for i in range(len(battery_voltage_thresholds)):
+			target = battery_voltage_thresholds[i]
+			if batteryWasBelowLastThresholds[i]: # add recovery buffer if we already went below the threshold (hysteresis?)
+				target += battery_voltage_recovery_buffers[i]
+			if battery_voltage < target: # we are still below the target. this obviously only works if we iterate from the lowest to the highest threshold.
+				active_threshold_index = i
+				break
+		if active_threshold_index != -1:
+			i = active_threshold_index
+			if not batteryWasBelowLastThresholds[i]: # Log once.
+				batteryWasBelowLastThresholds = [False] * len(battery_voltage_thresholds)
+				batteryWasBelowLastThresholds[i] = True
+				recovery_voltage = battery_voltage_thresholds[i]+battery_voltage_recovery_buffers[i]
+				log(f'Battery voltage ({battery_voltage}V) below threshold {i+1} ({battery_voltage_thresholds[i]}V).', LogStyle.INFO)
+				log(f'Capping Limit to {battery_voltage_threshold_caps[i] * 100}% until voltage drops below additional threshold or rises above {recovery_voltage}V again. (Threshold + Buffer)', LogStyle.INFO)
+			else:
+				if battery_voltage_threshold_caps[i] == 0:
 					return False
-				log('Battery voltage is above threshold again. Continuing Script.', LogStyle.INFO)
-				batteryWasBelowLastThresholds = [False] * len(batteryWasBelowLastThresholds)
+			max_power *= battery_voltage_threshold_caps[i]
 		else:
-			for i in [0, 1, 2]:
-				if battery_voltage < battery_voltage_thresholds[i]:
-					if batteryWasBelowLastThresholds[i]: # If it already was below the threshold, we dont log anything and just continue.
-						if i == 0: # Except for the last threshold, then the limit was set to 0 and we abort immediately.
-							return False
-					else:
-						batteryWasBelowLastThresholds = [False] * len(batteryWasBelowLastThresholds)
-						batteryWasBelowLastThresholds[i] = True
-						log(f'Battery voltage ({battery_voltage}V) below threshold {i+1} ({battery_voltage_thresholds[i]}V).', LogStyle.INFO)
-						log(f'Capping Limit to {battery_voltage_threshold_caps[i] * 100}% until voltage changes.', LogStyle.INFO)
-					max_power *= battery_voltage_threshold_caps[i]
-					break
+			if any(batteryWasBelowLastThresholds):
+				log(f'Battery voltage is above threshold again ({battery_voltage}V). Lifting all Caps.', LogStyle.INFO)
+				batteryWasBelowLastThresholds = [False] * len(battery_voltage_thresholds)
 	else:
-		if batteryWasOff: # Batterie war bereits aus -> skip
+		if batteryWasOff: # Battery was off, so it stays off
 			return True
 		batteryWasOff = True
 		if solarIsOn:
-			log('Battery is off, solar panels are delivering power. Setting Limit to 100 and sleep.', LogStyle.INFO)
+			log(f'Battery is off ({battery_voltage}V), solar panels are delivering power ({solar_power}W). Setting Limit to 100 and sleep.', LogStyle.INFO)
 			new_limit_a = max_power
 			batteryWasBelowLastThresholds = False # Reset on the new day
 		else:
-			log('Battery is off, solar panels are not delivering power. Setting Limit to 0 and sleep.', LogStyle.INFO)
+			log(f'Battery is off ({battery_voltage}V), solar panels are not delivering power ({solar_power}W). Setting Limit to 0 and sleep.', LogStyle.INFO)
 			new_limit_a = 0
 	new_limit_a = clamp(new_limit_a, 0, max_power)
 	new_limit_r = round(100 * new_limit_a / max_power, ndigits=1) if max_power > 0 else 0 # necessary to avoid division by 0
-	log(f'Current Power Consumption:\t{Fore.LIGHTRED_EX if power_consumption_now >= 0 else Fore.LIGHTGREEN_EX}{power_consumption_now}W')
-	log(f'Current Limit: {Fore.LIGHTWHITE_EX}{old_limit_r}% / {old_limit_a}W{Style.RESET_ALL}. Total Power: {Fore.LIGHTCYAN_EX}{current_power_delivery}W.')
+	consumption_color = Fore.LIGHTRED_EX if grid_power_consumption >= 0 else Fore.LIGHTGREEN_EX
+	log(f"Grid Draw:\t{consumption_color}{grid_power_consumption}W{Style.RESET_ALL} | "
+	 	f"Inverter Limit: {Fore.LIGHTWHITE_EX}{old_limit_r:}% / {old_limit_a}W{Style.RESET_ALL}.")
+	log(f'Total Inverter Output: {Fore.LIGHTCYAN_EX}{ac_power_output}W. (Solar: {solar_power}W : Battery: {battery_power}W)')
 	if (new_limit_a != old_limit_a):
 		# wechselrichter beschäftigt -> skip
 		if limit_set_status == "Pending":
 			log(f'New Limit would be {Fore.LIGHTCYAN_EX}{new_limit_r}% / {new_limit_a}W{Style.RESET_ALL}, but inverter is busy. Skipping.', LogStyle.WARNING)
 			return True
-		log(f'New Limit: {Fore.LIGHTCYAN_EX}{new_limit_r}% / {new_limit_a}W{Style.RESET_ALL} ({round(new_limit_a/limit_ratio)} = {power_consumption_now} + {current_power_delivery})')
+		log(f'New Limit: {Fore.LIGHTCYAN_EX}{new_limit_r}% / {new_limit_a}W{Style.RESET_ALL} ({round(new_limit_a/limit_ratio)} = {grid_power_consumption} + {ac_power_output})')
 		setLimitResponse = dtu.inverterSetLimitConfig(main_inverter, {"limit_type":0, "limit_value":new_limit_a})
 		limitWasUnchanged = False
 		if (setLimitResponse['type'] != "success"):
@@ -282,6 +332,63 @@ def update():
 		limitWasUnchanged = True
 	return True
 
+# EXECUTE SECTION
+colorama_init()
+
+sun = suntime.Sun(lat=latitude, lon=longitude)
+sunset = sun.get_sunset_time(time_zone=tz.gettz("Europe/Berlin"))
+sunrise = sun.get_sunrise_time(time_zone=tz.gettz("Europe/Berlin"))
+
+# INIT VARIABLES
+dtu = openDTU(urlOpenDTU, portOpenDTU, username, password)
+ticks = 0
+main_inverter = None
+inverterWasReachable = True
+limitWasUnchanged = False
+batteryWasBelowLastThresholds = [False, False, False]
+batteryWasOff = False
+solarWasOn = True
+last_save_time = 0
+# grid_history = [0, 0, 0] Its initialized further down
+data_buffer = []
+
+os.chdir('data') # set working directory
+log(f'Program Start: [{(datetime.now()).strftime("%Y-%m-%d %H:%M:%S")}]')
+log(f'Sunrise: {sunrise.time()}, Sunset: {sunset.time()}')
+log(f'Starting..')
+
+# SQL INIT
+conn = sqlite3.connect(DB_FILE, timeout=5)
+conn.execute("PRAGMA journal_mode=WAL;")
+conn.execute("""
+CREATE TABLE IF NOT EXISTS measurements (
+	timestamp INTEGER PRIMARY KEY,
+    inverterLimit REAL,
+    acPowerOutput REAL, 
+    gridConsumption REAL
+)
+""")
+conn.execute("""
+CREATE TABLE IF NOT EXISTS dc_inputs (
+    timestamp INTEGER,
+    inputIndex INTEGER,
+    name TEXT,
+    power REAL,
+    voltage REAL,
+    FOREIGN KEY(timestamp) REFERENCES measurements(timestamp)
+)
+""")
+conn.commit()
+cursor = conn.cursor()
+
+# Seed the history to prevent a 0
+grid_power_seed_value = get_BitMeter_data()
+if grid_power_seed_value is None:
+	grid_history = [0, 0, 0]
+else:
+	grid_history = [grid_power_seed_value] * 3 
+
+# MAIN LOOP
 try:
 	next_time = time.time()
 	while True:
