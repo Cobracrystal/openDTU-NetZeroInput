@@ -30,6 +30,9 @@
 	<script src="/static/js/chartjs-plugin-zoom.min.js"></script>
 	<script src="/static/js/luxon.min.js"></script>
 	<script src="/static/js/chartjs-adapter-luxon@1.js"></script>
+	<button onclick="resetZoom()" style="margin-bottom: 10px; padding: 5px 10px; cursor: pointer;">
+    	Zoom zurücksetzen
+	</button>
 	<canvas id="solarData"></canvas>
 
 	<script>
@@ -77,6 +80,12 @@
 				allData = allData.concat(newPoints);
 				firstTimestamp = allData[0].timestamp
 				updateChart(formatData(allData));
+			}
+		}
+
+		function resetZoom() {
+			if (chart) {
+				chart.resetZoom()
 			}
 		}
 
@@ -150,7 +159,10 @@
 							ticks: {
 								autoSkip: true,
 								maxRotation: 0,
-								minRotation: 0
+								minRotation: 0,
+								padding: 10, // gap between labels
+								sampleSize: 10, // minimum spacing between ticks
+								maxTicksLimit: 10, // max ticks on screen
 							}
 						},
 						y1: {
