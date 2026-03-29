@@ -23,20 +23,23 @@
 		return await response.json();
 	}
 
-	function appendNewData(newData, colHeaders) {
+	function appendNewData(newData, colHeaders, mapping) {
 		// formatted = [{
 		// 			index: 0,
 		//			name: "",
 		// 			values: [ { x: 0, y: 0}]
 		// 		}, ...]
-		// SELECT timestamp, inputIndex, power 
-		const TS = 0, INDEX = 1, PWR = 2;
+		const TS = 0, VOLTAGES = 1;
 
+		const iterableMapping = Object.entries(mapping)
+		
 		for (const d of newData) {
 			const x = d[TS] * 1000;
-			const idx = colMap[d[INDEX]];
-			if (idx !== undefined) {
-				chartData[idx].values.push({ x, y: d[PWR] });
+			const voltageArr = d[VOLTAGES];
+			let currentSum = 0;
+			for (const [inputIndex, arrayPos] of iterableMapping) {
+				const y = voltageArr[arrayPos];
+				chartData[arrayPos].values.push({ x, y });
 			}
 		}
 
@@ -46,19 +49,18 @@
 		// purge all values older than 24 hours. shift() is faster than filter. mostly irrelevant but neat
 
 		for (let row of chartData) {
-			cur = row.values;
-			while (cur.length > 0 && cur[0].x < cutoff) {
-				cur.shift();
+			let series = row.values;
+			while (series.length > 0 && series[0].x < cutoff) {
+				series.shift();
 			}
 		}
 		if (chartData[0].values.length > 0) {
-			firstTimestamp = Math.floor(chartData[0].values[0].x / 1000);  // choice of chartdata index is arbitrary
+			firstTimestamp = Math.floor(chartData[0].values[0].x / 1000);
 		}
 	}
 
 	async function pollUpdates(isInitialLoad = false) {
-		let newData
-		const TS = 0, GRID = 1, INDEX = 2, PWR = 3;
+		const TS = 0;
 		const response = isInitialLoad ? await fetchData() : await fetchDataUpdate();
 
 		if (!response.values || response.values.length === 0)
@@ -68,7 +70,7 @@
 		const newPoints = response.values.filter(d => d[TS] > lastTimestamp);
 
 		if (newPoints.length > 0) {
-			appendNewData(newPoints, response.columns);
+			appendNewData(newPoints, response.columns, response.mapping);
 			updateChart(chartData);
 		}
 	}
