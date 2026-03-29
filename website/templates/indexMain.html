@@ -13,12 +13,12 @@
 	};
 
 	async function fetchData() {
-		const response = await fetch('/main_data.json');
+		const response = await fetch('/dashboard/json/main_data.json');
 		return await response.json();
 	}
 
 	async function fetchDataUpdate() {
-		const response = await fetch('/main_data_update.json');
+		const response = await fetch('/dashboard/json/main_data_update.json');
 		return await response.json();
 	}
 

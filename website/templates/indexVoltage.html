@@ -1,7 +1,7 @@
 
 {% extends "layout.html" %}
-{% block title %}Indivuelle Solarzellen (Spannung){% endblock %}
-{% block heading %}Indivuelle Solarzellen (Spannung){% endblock %}
+{% block title %}Solarzellen (Spannung){% endblock %}
+{% block heading %}Solarzellen (Spannung){% endblock %}
 
 {% block scripts %}
 <script>
@@ -9,17 +9,17 @@
 	let colMap = {};
 
 	async function fetchMetadata() {
-		const response = await fetch('/solar_metadata.json');
+		const response = await fetch('/dashboard/json/solar_metadata.json');
 		return await response.json();
 	}
 
 	async function fetchData() {
-		const response = await fetch('/solar_voltage.json');
+		const response = await fetch('/dashboard/json/solar_voltage.json');
 		return await response.json();
 	}
 
 	async function fetchDataUpdate() {
-		const response = await fetch('/solar_voltage_update.json');
+		const response = await fetch('/dashboard/json/solar_voltage_update.json');
 		return await response.json();
 	}
 

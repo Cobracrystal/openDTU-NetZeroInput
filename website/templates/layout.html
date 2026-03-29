@@ -6,28 +6,182 @@
 	<title>{% block title %}Solardaten{% endblock %}</title>
 	<link rel="shortcut icon" href="{{ url_for('static', filename='favicon.ico') }}">
 	<style>
+		:root {
+			--sidebar-width: 250px;
+			--primary-green: #18bc9c;
+			--dark-blue: #2c3e50;
+		}
+
 		html,
 		body {
 			margin: 0;
-			height: calc(100% - 40px);
+			height: 100%;
+			font-family: sans-serif;
+			overflow: hidden;
+		}
+
+		.wrapper {
+			display: flex;
+			height: 100vh;
+			width: 100vw;
+		}
+
+		/* SIDEBAR */
+		nav {
+			width: var(--sidebar-width);
+			background: var(--dark-blue);
+			color: white;
 			display: flex;
 			flex-direction: column;
+			padding: 15px;
+			transition: margin-left 0.3s ease;
+			/* Animation for sliding */
+			z-index: 1000;
+		}
+
+		/* Class to hide sidebar */
+		nav.hidden {
+			margin-left: calc(var(--sidebar-width) * -1 - 30px);
+		}
+
+		nav a {
+			color: #ecf0f1;
+			text-decoration: none;
+			padding: 12px;
+			border-radius: 4px;
+			margin-bottom: 5px;
+			transition: background 0.2s;
+		}
+
+		nav a:hover {
+			background: #34495e;
+		}
+
+		/* Highlight Class */
+		nav a.active {
+			background: var(--primary-green);
+			font-weight: bold;
+		}
+
+		/* Main Content Area */
+		main {
+			flex: 1;
+			display: flex;
+			flex-direction: column;
+			padding: 20px;
+			background: #f4f7f6;
+			min-width: 0;
+		}
+
+		/* Header Layout: Title on Left, Zoom on Right */
+		.header-row {
+			display: flex;
+			justify-content: space-between;
+			align-items: center;
+			margin-bottom: 15px;
+		}
+
+		.title-group {
+			display: flex;
+			align-items: center;
+			gap: 15px;
 		}
 
 		h2 {
 			margin: 0;
+		}
+
+		/* Hamburger Button */
+		.menu-toggle {
+			background: none;
+			border: none;
+			font-size: 24px;
+			cursor: pointer;
+			padding: 5px;
+			display: flex;
+			flex-direction: column;
+			gap: 4px;
+		}
+
+		.menu-toggle span {
+			display: block;
+			width: 25px;
+			height: 3px;
+			background: var(--dark-blue);
+		}
+
+		.toolbar {
+			display: flex;
+			gap: 8px;
+		}
+
+		button {
+			padding: 8px 12px;
+			cursor: pointer;
+			border: 1px solid #ddd;
+			background: white;
+			border-radius: 6px;
+			font-size: 0.9em;
+		}
+
+		button:hover {
+			background: #e9e9e9;
+		}
+
+		.btn-primary {
+			background: #18bc9c;
+			color: white;
+			border: none;
+		}
+
+		#chart-container {
+			flex: 1;
+			min-height: 0;
+			background: white;
+			border-radius: 12px;
+			box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
 			padding: 10px;
 		}
 
-		#solarData {
-			flex: 1;
-			width: 100%;
+		canvas {
+			width: 100% !important;
+			height: 100% !important;
 		}
 	</style>
 </head>
 
 <body>
-	<h2>{% block heading %}{% endblock %}</h2>
+	<div class="wrapper">
+		<nav id="sidebar">
+			<h3>Navigationsmenü</h3>
+			<a href="/dashboard/main" class="{{ 'active' if active_page == 'main' }}">Hauptdaten</a>
+			<a href="/dashboard/individualPower" class="{{ 'active' if active_page == 'individualPower' }}">Solarzellen (Leistung)</a>
+			<a href="/dashboard/individualVoltage" class="{{ 'active' if active_page == 'individualVoltage' }}">Solarzellen (Spannung)</a>
+		</nav>
+
+		<main>
+			<div class="header-row">
+				<div class="title-group">
+					<!-- spans are invisible, but we define them as having a color so they look good -->
+					<button class="menu-toggle" onclick="toggleSidebar()">
+						<span></span><span></span><span></span> 
+					</button>
+					<h2>{% block heading %}{% endblock %}</h2>
+				</div>
+
+				<div class="toolbar">
+					<button onclick="zoomControl(1.3)">Zoom In</button>
+					<button onclick="zoomControl(0.7)">Zoom Out</button>
+					<button onclick="resetZoom()">Reset Zoom</button>
+					<button class="btn-primary" onclick="jumpToRecent()">Latest Data</button>
+				</div>
+			</div>
+
+			<div id="chart-container">
+				<canvas id="solarData"></canvas>
+			</div>
+		</main>
+	</div>
 
 	<script src="/static/js/chart.js"></script>
 	<script src="/static/js/hammer.js"></script>
@@ -35,23 +189,36 @@
 	<script src="/static/js/luxon.min.js"></script>
 	<script src="/static/js/chartjs-adapter-luxon@1.js"></script>
 
-	<button onclick="resetZoom()" style="margin-bottom: 10px; padding: 5px 10px; cursor: pointer;">
-		Zoom zurücksetzen
-	</button>
-
-	<canvas id="solarData"></canvas>
-
 	<script>
-		// Shared global variables/functions
 		let chart = null;
 		const WINDOW_SECONDS = 24 * 60 * 60;
 		let lastTimestamp = 0;
 		let firstTimestamp = 0;
 
+		function toggleSidebar() {
+			document.getElementById('sidebar').classList.toggle('hidden');
+			// Give chart time to resize after sidebar slides
+			setTimeout(() => { if (chart) chart.resize(); }, 310);
+		}
+
 		function resetZoom() {
 			if (chart) {
 				chart.resetZoom();
 			}
+		}
+		function zoomControl(scale) {
+			if (chart) {
+				chart.zoom(scale);
+			}
+		}
+
+		function jumpToRecent() {
+			if (!chart) return;
+			const range = 120 * 1000; // Last two minutes
+			const newMax = (lastTimestamp + 60) * 1000;
+			chart.options.scales.x.min = newMax - range;
+			chart.options.scales.x.max = newMax;
+			chart.update();
 		}
 	</script>
 

@@ -1,4 +1,4 @@
-from flask import Flask, request, redirect, jsonify, render_template
+from flask import Flask, request, redirect, jsonify, render_template, url_for
 import os
 import sqlite3
 import time
@@ -61,45 +61,55 @@ def getSolarVoltage(minutes=1440):
     """
 	return query_db(query, (since,))
 
-@app.route("/main_data.json")
+
+##### JSON DATA
+@app.route("/dashboard/json/main_data.json")
 def main_data():
 	return jsonify(getMainData(minutes=1440))
 
-@app.route("/main_data_update.json")
+@app.route("/dashboard/json/main_data_update.json")
 def main_data_update():
 	return jsonify(getMainData(minutes=1))
 
-@app.route("/solar_metadata.json")
-def get_metadata():
-	return jsonify(query_db("SELECT inputIndex, name FROM dc_metadata"))
-
-@app.route("/solar_power.json")
+@app.route("/dashboard/json/solar_power.json")
 def solar_power():
 	return jsonify(getSolarPower(minutes=1440))
 
-@app.route("/solar_power_update.json")
+@app.route("/dashboard/json/solar_power_update.json")
 def solar_power_update():
 	return jsonify(getSolarPower(minutes=1))
 
-@app.route("/solar_voltage.json")
+@app.route("/dashboard/json/solar_voltage.json")
 def solar_voltage():
 	return jsonify(getSolarVoltage(minutes=1440))
 
-@app.route("/solar_voltage_update.json")
+@app.route("/dashboard/json/solar_voltage_update.json")
 def solar_voltage_update():
 	return jsonify(getSolarVoltage(minutes=1))
 
+@app.route("/dashboard/json/solar_metadata.json")
+def get_metadata():
+	return jsonify(query_db("SELECT inputIndex, name FROM dc_metadata"))
+
+
+#### HTML
+
 @app.route("/")
-def index():
-	return render_template("indexMain.html")
+def redirect_dashboard():
+	return redirect(url_for('dashboardMain'))
 
-@app.route("/power")
-def indexPower():
-	return render_template("indexPower.html")
+@app.route("/dashboard")
+@app.route("/dashboard/main")
+def dashboardMain():
+	return render_template("indexMain.html", active_page="main")
 
-@app.route("/voltage")
-def indexVoltage():
-	return render_template("indexVoltage.html")
+@app.route("/dashboard/individualPower")
+def dashboardIndividualPower():
+	return render_template("indexPower.html", active_page="individualPower")
+
+@app.route("/dashboard/individualVoltage")
+def dashboardIndividualVoltage():
+	return render_template("indexVoltage.html", active_page="individualVoltage")
 
 if __name__ == "__main__":
 	app.run(host="0.0.0.0", port=5000, debug=True)

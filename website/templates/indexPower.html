@@ -1,7 +1,7 @@
 
 {% extends "layout.html" %}
-{% block title %}Indivuelle Solarzellen (Leistung){% endblock %}
-{% block heading %}Indivuelle Solarzellen (Leistung){% endblock %}
+{% block title %}Solarzellen (Leistung){% endblock %}
+{% block heading %}Solarzellen (Leistung){% endblock %}
 
 {% block scripts %}
 <script>
@@ -12,17 +12,17 @@
 	let colMap = {};
 
 	async function fetchMetadata() {
-		const response = await fetch('/solar_metadata.json');
+		const response = await fetch('/dashboard/json/solar_metadata.json');
 		return await response.json();
 	}
 
 	async function fetchData() {
-		const response = await fetch('/solar_power.json');
+		const response = await fetch('/dashboard/json/solar_power.json');
 		return await response.json();
 	}
 
 	async function fetchDataUpdate() {
-		const response = await fetch('/solar_power_update.json');
+		const response = await fetch('/dashboard/json/solar_power_update.json');
 		return await response.json();
 	}
 
