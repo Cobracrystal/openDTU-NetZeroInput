@@ -1,4 +1,3 @@
-
 {% extends "layout.html" %}
 {% block title %}Solarzellen (Leistung){% endblock %}
 {% block heading %}Solarzellen (Leistung){% endblock %}
@@ -39,7 +38,7 @@
 		const TS = 0, POWERS = 1;
 
 		const iterableMapping = Object.entries(mapping)
-		
+
 		for (const d of newData) {
 			const x = d[TS] * 1000;
 			const powerArr = d[POWERS];
@@ -49,7 +48,7 @@
 				chartData.dc_inputs[arrayPos].values.push({ x, y });
 				currentSum += y
 			}
-			chartData.sum.push({ x, y: Math.round( currentSum )})
+			chartData.sum.push({ x, y: Math.round(currentSum) })
 		}
 
 		lastTimestamp = newData[newData.length - 1][TS];

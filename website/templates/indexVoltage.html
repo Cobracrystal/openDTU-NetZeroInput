@@ -1,4 +1,3 @@
-
 {% extends "layout.html" %}
 {% block title %}Solarzellen (Spannung){% endblock %}
 {% block heading %}Solarzellen (Spannung){% endblock %}
@@ -32,7 +31,7 @@
 		const TS = 0, VOLTAGES = 1;
 
 		const iterableMapping = Object.entries(mapping)
-		
+
 		for (const d of newData) {
 			const x = d[TS] * 1000;
 			const voltageArr = d[VOLTAGES];

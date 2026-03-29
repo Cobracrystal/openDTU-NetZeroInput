@@ -36,7 +36,7 @@
 			padding: 15px;
 			transition: margin-left 0.3s ease;
 			z-index: 1000;
-    		margin-left: calc(var(--sidebar-width) * -1 - 30px);
+			margin-left: calc(var(--sidebar-width) * -1 - 30px);
 		}
 
 		/* Update this selector to show it when the class is REMOVED */
@@ -152,11 +152,13 @@
 
 <body>
 	<div class="wrapper">
-		<nav id="sidebar" class="hidden"> 
+		<nav id="sidebar" class="hidden">
 			<h3>Navigationsmenü</h3>
 			<a href="/dashboard/main" class="{{ 'active' if active_page == 'main' }}">Hauptdaten</a>
-			<a href="/dashboard/individualPower" class="{{ 'active' if active_page == 'individualPower' }}">Solarzellen (Leistung)</a>
-			<a href="/dashboard/individualVoltage" class="{{ 'active' if active_page == 'individualVoltage' }}">Solarzellen (Spannung)</a>
+			<a href="/dashboard/individualPower" class="{{ 'active' if active_page == 'individualPower' }}">Solarzellen
+				(Leistung)</a>
+			<a href="/dashboard/individualVoltage"
+				class="{{ 'active' if active_page == 'individualVoltage' }}">Solarzellen (Spannung)</a>
 		</nav>
 
 		<main>
@@ -164,7 +166,7 @@
 				<div class="title-group">
 					<!-- spans are invisible, but we define them as having a color so they look good -->
 					<button class="menu-toggle" onclick="toggleSidebar()">
-						<span></span><span></span><span></span> 
+						<span></span><span></span><span></span>
 					</button>
 					<h2>{% block heading %}{% endblock %}</h2>
 				</div>
@@ -203,9 +205,13 @@
 
 		function resetZoom() {
 			if (chart) {
+				chart.options.scales.x.min = undefined;
+				chart.options.scales.x.max = undefined;
+				chart.update()
 				chart.resetZoom();
 			}
 		}
+
 		function zoomControl(scale) {
 			if (chart) {
 				chart.zoom(scale);
