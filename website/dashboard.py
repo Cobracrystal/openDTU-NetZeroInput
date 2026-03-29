@@ -7,36 +7,97 @@ DB_FILE_NAME = "solar_data.db"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_FILE = os.path.normpath(os.path.join(BASE_DIR, '..', 'data', DB_FILE_NAME))
 
+BATTERY_NAME = "Batterie-Lader"
+
 app = Flask(__name__)
 
-def fetch_data(minutes=1440):
-    """Fetch last N hours of measurements from SQLite."""
-    conn = sqlite3.connect(DB_FILE)
-    cursor = conn.cursor()
-    now = int(time.time())
-    since = now - minutes * 60
-    cursor.execute("""
-        SELECT timestamp, inverterLimit, battery, consumption, voltage
-        FROM measurements
+def query_db(query, args=()):
+	conn = sqlite3.connect(DB_FILE)
+	conn.row_factory = sqlite3.Row
+	cur = conn.cursor()
+	cur.execute(query, args)
+	rv = cur.fetchall()
+	conn.close()
+	return [dict(ix) for ix in rv]
+
+def get_since_timestamp(minutes):
+	return int(time.time()) - (minutes * 60)
+
+def getMainData(minutes=1440):
+	"""Timestamp, Inverter Limit, Battery Power, Battery Voltage, Grid Consumption"""
+	since = get_since_timestamp(minutes)
+	query = """
+		SELECT m.timestamp, m.inverterLimit, d.power as batteryPower, d.voltage as batteryVoltage, m.gridConsumption
+		FROM measurements m
+		JOIN dc_inputs d ON m.timestamp = d.timestamp
+		JOIN dc_metadata meta ON d.inputIndex = meta.inputIndex
+		WHERE m.timestamp >= ? AND meta.name = ?
+		ORDER BY m.timestamp ASC
+	"""
+	return query_db(query, (since, BATTERY_NAME))
+
+def getSolarPower(minutes=1440):
+	"""Secondary: all solar panels and battery power"""
+	since = get_since_timestamp(minutes)
+	query = """
+		SELECT timestamp, inputIndex, power 
+		FROM dc_inputs
+		WHERE timestamp >= ?
+		ORDER BY timestamp ASC
+	"""
+	return query_db(query, (since,))
+
+def getSolarVoltage(minutes=1440):
+	"""Third: solar panels and battery voltage"""
+	since = get_since_timestamp(minutes)
+	query = """
+        SELECT timestamp, inputIndex, voltage 
+        FROM dc_inputs
         WHERE timestamp >= ?
         ORDER BY timestamp ASC
-    """, (since,))
-    rows = cursor.fetchall()
-    conn.close()
-    # Convert to list of dicts for JSON
-    return [{"timestamp": ts, "inverterLimit": lim, "battery": b, "consumption": c, "voltage": v} for ts, lim, b, c, v in rows]
+    """
+	return query_db(query, (since,))
 
-@app.route("/data.json")
-def data_json():
-    return jsonify(fetch_data(minutes=1440))  # last 24 hours
 
-@app.route("/dataupdate.json")
-def dataupdate_json():
-    return jsonify(fetch_data(minutes=1))  # last 5 mins
+@app.route("/metadata.json")
+def get_metadata():
+	return jsonify(query_db("SELECT inputIndex, name FROM dc_metadata"))
+
+@app.route("/main_data.json")
+def main_data():
+	return jsonify(getMainData(minutes=1440))
+
+@app.route("/main_data_update.json")
+def main_data_update():
+	return jsonify(getMainData(minutes=1))
+
+@app.route("/solar_power.json")
+def solar_power():
+	return jsonify(getSolarPower(minutes=1440))
+
+@app.route("/solar_power_update.json")
+def solar_power_update():
+	return jsonify(getSolarPower(minutes=1))
+
+@app.route("/solar_voltage.json")
+def solar_voltage():
+	return jsonify(getSolarVoltage(minutes=1440))
+
+@app.route("/solar_voltage_update.json")
+def solar_voltage_update():
+	return jsonify(getSolarVoltage(minutes=1))
 
 @app.route("/")
 def index():
-    return app.send_static_file("index.html")  # serve frontend HTML
+	return app.send_static_file("index.html")
+
+@app.route("/power")
+def indexPower():
+	return app.send_static_file("indexPower.html")
+
+@app.route("/voltage")
+def indexVoltage():
+	return app.send_static_file("indexVoltage.html")
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+	app.run(host="0.0.0.0", port=5000)

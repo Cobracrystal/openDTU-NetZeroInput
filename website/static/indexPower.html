@@ -3,7 +3,7 @@
 
 <head>
 	<meta charset="utf-8">
-	<title>Solardaten</title>
+	<title>Solarzellenleistung</title>
 	<style>
 		html, body {
 			margin: 0;
@@ -42,13 +42,18 @@
 		let firstTimestamp = 0;
 		const WINDOW_SECONDS = 24 * 60 * 60;
 
+		async function fetchMetadata() {
+			const response = await fetch('/metadata.json');
+			return await response.json();
+		}
+
 		async function fetchData() {
-			const response = await fetch('/main_data.json');
+			const response = await fetch('/solar_power.json');
 			return await response.json();
 		}
 
 		async function fetchDataUpdate() {
-			const response = await fetch('/main_data_update.json');
+			const response = await fetch('/solar_power_update.json');
 			return await response.json();
 		}
 
@@ -166,17 +171,11 @@
 						y1: {
 							position: 'left',
 							title: { display: true, text: 'Leistung' }
-						},
-						y2: {
-							position: 'right',
-							title: { display: true, text: 'Spannung' },
-							suggestedMin: 0,
-							suggestedMax: 55,
-							grid: { drawOnChartArea: false } // prevent double grid lines
 						}
 					}
 				}
 			});
+			await getMetadata()
 			await pollUpdates(true)
 		}
 

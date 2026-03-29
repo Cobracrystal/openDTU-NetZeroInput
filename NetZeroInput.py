@@ -94,12 +94,28 @@ def log(text, style=LogStyle.DEFAULT):
 		except Exception as e:
 			print(f'{timestamp} {BADEVENT_COLOR}ERROR: FAILED TO WRITE TO LOG FILE.{Style.RESET_ALL}')
 
+def initSQLMetadata(dc_list: list[DCInput]):
+	""" To make sure all current DC inputs are registered in the metadata table."""
+	metadata_rows = [(dc.index, dc.name) for dc in dc_list]
+	try:
+		cursor.executemany(
+			"INSERT OR REPLACE INTO dc_metadata (inputIndex, name) VALUES (?, ?)",
+			metadata_rows
+		)
+		conn.commit()
+		return True
+	except sqlite3.Error as e:
+		log(f"Metadata sync failed: {e}", LogStyle.ERROR)
+		return False
+	
 def saveSQL():
-	global data_buffer
+	global data_buffer, metadataIsSynced
 	if not data_buffer:
 		return
 	rows_measurement = []
 	rows_dc_input = []
+	if not metadataIsSynced:
+		metadataIsSynced = initSQLMetadata(data_buffer[-1].dc_list)
 	for dataPoint in data_buffer:
 		rows_measurement.append((
 			dataPoint.timestamp, 
@@ -111,16 +127,15 @@ def saveSQL():
 			rows_dc_input.append((
 				dataPoint.timestamp,
 				dc.index,
-				dc.name,
 				dc.power,
 				dc.voltage
 			))
 	try:
 		cursor.executemany("INSERT OR IGNORE INTO measurements VALUES (?, ?, ?, ?)", rows_measurement)
-		cursor.executemany("INSERT OR IGNORE INTO dc_inputs VALUES (?, ?, ?, ?, ?)", rows_dc_input)
+		cursor.executemany("INSERT OR IGNORE INTO dc_inputs VALUES (?, ?, ?, ?)", rows_dc_input)
 		conn.commit()
 	except sqlite3.Error as e:
-		log(f'Speichern fehlgeschlagen: {e}', style=LogStyle.ERROR)
+		log(f'Saving failed: {e}', style=LogStyle.ERROR)
 		conn.rollback()
 	finally:
 		data_buffer.clear()
@@ -142,7 +157,9 @@ def validate_consumption(new_value):
 	if abs(new_value - last_value) < 2000: # should be correct
 		return new_value
 	else: # unsure
-		return sorted(grid_history)[1]
+		better_value = sorted(grid_history)[1]
+		log(f"Validating suspicious Bitmeter reading: {new_value}W -> {better_value}W", LogStyle.WARNING)
+		return better_value
 	
 def get_openDTU_data():
 	global main_inverter
@@ -351,6 +368,7 @@ solarWasOn = True
 last_save_time = 0
 # grid_history = [0, 0, 0] Its initialized further down
 data_buffer = []
+metadataIsSynced = False
 
 os.chdir('data') # set working directory
 log(f'Program Start: [{(datetime.now()).strftime("%Y-%m-%d %H:%M:%S")}]')
@@ -369,13 +387,19 @@ CREATE TABLE IF NOT EXISTS measurements (
 )
 """)
 conn.execute("""
+CREATE TABLE IF NOT EXISTS dc_metadata (
+    inputIndex INTEGER PRIMARY KEY,
+    name TEXT UNIQUE
+)
+""")
+conn.execute("""
 CREATE TABLE IF NOT EXISTS dc_inputs (
     timestamp INTEGER,
     inputIndex INTEGER,
-    name TEXT,
     power REAL,
     voltage REAL,
     FOREIGN KEY(timestamp) REFERENCES measurements(timestamp)
+    FOREIGN KEY(inputIndex) REFERENCES dc_metadata(inputIndex)
 )
 """)
 conn.commit()
