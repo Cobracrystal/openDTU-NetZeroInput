@@ -53,7 +53,6 @@
 		}
 
 		function formatData(data) {
-			const data = { columns, values };
 			// SELECT m.timestamp, m.inverterLimit, d.power as batteryPower, d.voltage as batteryVoltage, m.gridConsumption
 			const indices = (n) => newData.columns.indexOf(n);
 			const [ts, lim, grid, pwr, volt] = [indices('timestamp'), indices('inverterLimit'), indices('gridConsumption'), indices('batteryPower'), indices('batteryVoltage')];
