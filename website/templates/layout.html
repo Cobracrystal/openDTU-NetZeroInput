@@ -35,13 +35,13 @@
 			flex-direction: column;
 			padding: 15px;
 			transition: margin-left 0.3s ease;
-			/* Animation for sliding */
 			z-index: 1000;
+    		margin-left: calc(var(--sidebar-width) * -1 - 30px);
 		}
 
-		/* Class to hide sidebar */
-		nav.hidden {
-			margin-left: calc(var(--sidebar-width) * -1 - 30px);
+		/* Update this selector to show it when the class is REMOVED */
+		nav:not(.hidden) {
+			margin-left: 0;
 		}
 
 		nav a {
@@ -93,7 +93,7 @@
 
 		/* Hamburger Button */
 		.menu-toggle {
-			background: none;
+			background: #a798fd;
 			border: none;
 			font-size: 24px;
 			cursor: pointer;
@@ -152,7 +152,7 @@
 
 <body>
 	<div class="wrapper">
-		<nav id="sidebar">
+		<nav id="sidebar"> class="hidden"
 			<h3>Navigationsmenü</h3>
 			<a href="/dashboard/main" class="{{ 'active' if active_page == 'main' }}">Hauptdaten</a>
 			<a href="/dashboard/individualPower" class="{{ 'active' if active_page == 'individualPower' }}">Solarzellen (Leistung)</a>
