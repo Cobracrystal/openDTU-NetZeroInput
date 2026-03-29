@@ -26,6 +26,9 @@ def query_db(query, args=()):
 def get_since_timestamp(minutes):
 	return int(time.time()) - (minutes * 60)
 
+def getSolarMetadata():
+	return query_db("SELECT inputIndex, name FROM dc_metadata")
+
 def getMainData(minutes=1440):
 	"""Timestamp, Inverter Limit, Battery Power, Battery Voltage, Grid Consumption"""
 	since = get_since_timestamp(minutes)
@@ -41,6 +44,11 @@ def getMainData(minutes=1440):
 
 def getSolarPower(minutes=1440):
 	"""Secondary: all solar panels and battery power"""
+	
+	metadata = getSolarMetadata()
+	index_to_pos = {row[0]: i for i, row in enumerate(metadata['values'])}
+	row_template = [0.0] * len(metadata['values'])
+
 	since = get_since_timestamp(minutes)
 	query = """
 		SELECT timestamp, inputIndex, power
@@ -48,18 +56,53 @@ def getSolarPower(minutes=1440):
 		WHERE timestamp >= ?
 		ORDER BY timestamp ASC
 	"""
-	return query_db(query, (since,))
+	result = query_db(query, (since,))
+	
+	# all of this to avoid repeating the timestamp 300000 times
+	grouped = {}
+	for timestamp, idx, power in result["values"]: # rows.values != rows["values"] for iterating
+		if timestamp not in grouped:
+			grouped[timestamp] = list(row_template) # [0.0, 0.0, 0.0, 0.0] or some variation of that
+		if idx in index_to_pos:
+			grouped[timestamp][index_to_pos[idx]] = power
+
+	grouped_data = [[ts, powers] for ts, powers in sorted(grouped.items())]
+	return {
+		"columns": [ "timestamp", "power_values" ],
+		"mapping": index_to_pos,
+		"values": grouped_data
+	}
 
 def getSolarVoltage(minutes=1440):
 	"""Third: solar panels and battery voltage"""
+	
+	metadata = getSolarMetadata()
+	index_to_pos = {row[0]: i for i, row in enumerate(metadata['values'])}
+	row_template = [0.0] * len(metadata['values'])
+
 	since = get_since_timestamp(minutes)
 	query = """
-        SELECT timestamp, inputIndex, voltage 
-        FROM dc_inputs
-        WHERE timestamp >= ?
-        ORDER BY timestamp ASC
-    """
-	return query_db(query, (since,))
+		SELECT timestamp, inputIndex, voltage 
+		FROM dc_inputs
+		WHERE timestamp >= ?
+		ORDER BY timestamp ASC
+	"""
+	result = query_db(query, (since,))
+	
+	# all of this to avoid repeating the timestamp 300000 times
+	grouped = {}
+	for timestamp, idx, power in result["values"]: # rows.values != rows["values"] for iterating
+		if timestamp not in grouped:
+			grouped[timestamp] = list(row_template) # [0.0, 0.0, 0.0, 0.0] or some variation of that
+		if idx in index_to_pos:
+			grouped[timestamp][index_to_pos[idx]] = power
+
+	grouped_data = [[ts, powers] for ts, powers in sorted(grouped.items())]
+	return {
+		"columns": [ "timestamp", "voltage_values" ],
+		"mapping": index_to_pos,
+		"values": grouped_data
+	}
 
 
 ##### JSON DATA
@@ -88,8 +131,8 @@ def solar_voltage_update():
 	return jsonify(getSolarVoltage(minutes=1))
 
 @app.route("/dashboard/json/solar_metadata.json")
-def get_metadata():
-	return jsonify(query_db("SELECT inputIndex, name FROM dc_metadata"))
+def solar_metadata():
+	return jsonify(getSolarMetadata())
 
 
 #### HTML
