@@ -234,6 +234,7 @@ def update():
 			solar_power += power
 			if voltage > 2:
 				solarIsOn = True
+	solar_power = round(solar_power, 1)
 	batteryIsOn = battery_power > 0
 	old_limit_r = float(inverter_info['limit_relative'])
 	old_limit_a = round(inverter_info['limit_absolute'])
@@ -324,7 +325,7 @@ def update():
 		if solarIsOn:
 			log(f'Battery is off ({battery_voltage}V), solar panels are delivering power ({solar_power}W). Setting Limit to 100 and sleep.', LogStyle.INFO)
 			new_limit_a = max_power
-			batteryWasBelowLastThresholds = False # Reset on the new day
+			batteryWasBelowLastThresholds = [False] * len(battery_voltage_thresholds) # Reset on the new day
 		else:
 			log(f'Battery is off ({battery_voltage}V), solar panels are not delivering power ({solar_power}W). Setting Limit to 0 and sleep.', LogStyle.INFO)
 			new_limit_a = 0
@@ -333,7 +334,7 @@ def update():
 	consumption_color = Fore.LIGHTRED_EX if grid_power_consumption >= 0 else Fore.LIGHTGREEN_EX
 	log(f"Grid Draw:\t{consumption_color}{grid_power_consumption}W{Style.RESET_ALL} | "
 	 	f"Inverter Limit: {Fore.LIGHTWHITE_EX}{old_limit_r:}% / {old_limit_a}W{Style.RESET_ALL}.")
-	log(f'Total Inverter Output: {Fore.LIGHTCYAN_EX}{ac_power_output}W. (Solar: {solar_power}W : Battery: {battery_power}W)')
+	log(f'Total Inverter Output: {Fore.LIGHTBLUE_EX}{ac_power_output}W{Style.RESET_ALL}. (Solar: {Fore.YELLOW}{solar_power}W{Style.RESET_ALL} : Battery: {Fore.MAGENTA}{battery_power}W{Style.RESET_ALL})')
 	if (new_limit_a != old_limit_a):
 		# wechselrichter beschäftigt -> skip
 		if limit_set_status == "Pending":
@@ -362,7 +363,7 @@ ticks = 0
 main_inverter = None
 inverterWasReachable = True
 limitWasUnchanged = False
-batteryWasBelowLastThresholds = [False, False, False]
+batteryWasBelowLastThresholds = [False] * len(battery_voltage_thresholds)
 batteryWasOff = False
 solarWasOn = True
 last_save_time = 0
