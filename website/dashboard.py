@@ -13,12 +13,15 @@ app = Flask(__name__)
 
 def query_db(query, args=()):
 	conn = sqlite3.connect(DB_FILE)
-	conn.row_factory = sqlite3.Row
 	cur = conn.cursor()
 	cur.execute(query, args)
-	rv = cur.fetchall()
+	columns = [column[0] for column in cur.description]
+	data = cur.fetchall()
 	conn.close()
-	return [dict(ix) for ix in rv]
+	return {
+		"columns": columns,
+		"values": data
+	}
 
 def get_since_timestamp(minutes):
 	return int(time.time()) - (minutes * 60)
@@ -27,7 +30,7 @@ def getMainData(minutes=1440):
 	"""Timestamp, Inverter Limit, Battery Power, Battery Voltage, Grid Consumption"""
 	since = get_since_timestamp(minutes)
 	query = """
-		SELECT m.timestamp, m.inverterLimit, d.power as batteryPower, d.voltage as batteryVoltage, m.gridConsumption
+		SELECT m.timestamp, m.inverterLimit, m.gridConsumption, d.power as batteryPower, d.voltage as batteryVoltage
 		FROM measurements m
 		JOIN dc_inputs d ON m.timestamp = d.timestamp
 		JOIN dc_metadata meta ON d.inputIndex = meta.inputIndex
@@ -40,9 +43,10 @@ def getSolarPower(minutes=1440):
 	"""Secondary: all solar panels and battery power"""
 	since = get_since_timestamp(minutes)
 	query = """
-		SELECT timestamp, inputIndex, power 
-		FROM dc_inputs
-		WHERE timestamp >= ?
+		SELECT m.timestamp, m.gridConsumption, d.inputIndex, d.power 
+		FROM measurements m
+		JOIN dc_inputs d ON m.timestamp = d.timestamp
+		WHERE m.timestamp >= ?
 		ORDER BY timestamp ASC
 	"""
 	return query_db(query, (since,))

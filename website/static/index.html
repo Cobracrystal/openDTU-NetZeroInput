@@ -53,12 +53,21 @@
 		}
 
 		function formatData(data) {
-			return {
-				inverterLimit: 		data.map(d => ({ x: d.timestamp * 1000, y: d.inverterLimit })),
-				gridConsumption: 	data.map(d => ({ x: d.timestamp * 1000, y: d.gridConsumption })),
-				batteryPower: 		data.map(d => ({ x: d.timestamp * 1000, y: d.batteryPower })),
-				batteryVoltage: 	data.map(d => ({ x: d.timestamp * 1000, y: d.batteryVoltage }))
-			};
+			const data = { columns, values };
+			// SELECT m.timestamp, m.inverterLimit, d.power as batteryPower, d.voltage as batteryVoltage, m.gridConsumption
+			const indices = (n) => newData.columns.indexOf(n);
+			const [ts, lim, grid, pwr, volt] = [indices('timestamp'), indices('inverterLimit'), indices('gridConsumption'), indices('batteryPower'), indices('batteryVoltage')];
+
+			const result = { inverterLimit: [], gridConsumption: [], batteryPower: [], batteryVoltage: [] };
+
+			for (const d of values) {
+				const x = d[ts] * 1000;
+				result.inverterLimit.push({ x, y: d[lim] });
+				result.gridConsumption.push({ x, y: d[grid] });
+				result.batteryPower.push({ x, y: d[pwr] });
+				result.batteryVoltage.push({ x, y: d[volt] });
+			}
+			return result;
 		}
 
 		async function pollUpdates(getAll = false) {
@@ -69,14 +78,16 @@
 				newData = await fetchDataUpdate();
 			}
 			// only append points with newer timestamp
-			const newPoints = newData.filter(d => d.timestamp > lastTimestamp);
+			const tsidx = newData.columns.indexOf('timestamp')
+
+			const newPoints = newData.filter(d => d[tsidx] > lastTimestamp);
 
 			if (newPoints.length > 0) {
-				lastTimestamp = newPoints[newPoints.length - 1].timestamp
+				lastTimestamp = newPoints[newPoints.length - 1][tsidx]
 				const cutoff = lastTimestamp - WINDOW_SECONDS;
-				allData = allData.filter(d => d.timestamp >= cutoff);
+				allData = allData.filter(d => d[tsidx] >= cutoff);
 				allData = allData.concat(newPoints);
-				firstTimestamp = allData[0].timestamp
+				firstTimestamp = allData[0][tsidx]
 				updateChart(formatData(allData));
 			}
 		}
