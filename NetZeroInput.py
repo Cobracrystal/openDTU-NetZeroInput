@@ -262,9 +262,6 @@ def update():
 		last_save_time = now
 	if storeData and ticks % (saveInterval // checkInterval) == 0:
 		saveSQL()
-	# Nur updaten wenn update_interval verstrichen ist
-	if ticks % (update_interval // checkInterval) != 0:
-		return True
 	# wechselrichter nicht erreichbar -> limit kann eh nicht gesetzt werden -> skip
 	if not inverterIsReachable:
 		if inverterWasReachable:
@@ -274,6 +271,9 @@ def update():
 			else:
 				log('No connection to inverter. Battery was on, so this is unusual. Skipping logs until reachable.', LogStyle.INFO)
 		return False
+	# Nur updaten wenn update_interval verstrichen ist
+	if ticks % (update_interval // checkInterval) != 0:
+		return True
 	# Wechselrichter ist erreichbar
 	if not inverterWasReachable:
 		inverterWasReachable = True
