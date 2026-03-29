@@ -1,4 +1,4 @@
-from flask import Flask, request, redirect, jsonify
+from flask import Flask, request, redirect, jsonify, render_template
 import os
 import sqlite3
 import time
@@ -43,10 +43,9 @@ def getSolarPower(minutes=1440):
 	"""Secondary: all solar panels and battery power"""
 	since = get_since_timestamp(minutes)
 	query = """
-		SELECT m.timestamp, m.gridConsumption, d.inputIndex, d.power 
-		FROM measurements m
-		JOIN dc_inputs d ON m.timestamp = d.timestamp
-		WHERE m.timestamp >= ?
+		SELECT timestamp, inputIndex, power
+		FROM dc_inputs
+		WHERE timestamp >= ?
 		ORDER BY timestamp ASC
 	"""
 	return query_db(query, (since,))
@@ -62,11 +61,6 @@ def getSolarVoltage(minutes=1440):
     """
 	return query_db(query, (since,))
 
-
-@app.route("/metadata.json")
-def get_metadata():
-	return jsonify(query_db("SELECT inputIndex, name FROM dc_metadata"))
-
 @app.route("/main_data.json")
 def main_data():
 	return jsonify(getMainData(minutes=1440))
@@ -74,6 +68,10 @@ def main_data():
 @app.route("/main_data_update.json")
 def main_data_update():
 	return jsonify(getMainData(minutes=1))
+
+@app.route("/solar_metadata.json")
+def get_metadata():
+	return jsonify(query_db("SELECT inputIndex, name FROM dc_metadata"))
 
 @app.route("/solar_power.json")
 def solar_power():
@@ -93,15 +91,15 @@ def solar_voltage_update():
 
 @app.route("/")
 def index():
-	return app.send_static_file("index.html")
+	return render_template("index.html")
 
 @app.route("/power")
 def indexPower():
-	return app.send_static_file("indexPower.html")
+	return render_template("indexPower.html")
 
 @app.route("/voltage")
 def indexVoltage():
-	return app.send_static_file("indexVoltage.html")
+	return render_template("indexVoltage.html")
 
 if __name__ == "__main__":
-	app.run(host="0.0.0.0", port=5000)
+	app.run(host="0.0.0.0", port=5000, debug=True)
