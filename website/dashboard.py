@@ -91,7 +91,7 @@ def solar_voltage_update():
 
 @app.route("/")
 def index():
-	return render_template("index.html")
+	return render_template("indexMain.html")
 
 @app.route("/power")
 def indexPower():

@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+	<meta charset="utf-8">
+	<title>{% block title %}Solardaten{% endblock %}</title>
+	<link rel="shortcut icon" href="{{ url_for('static', filename='favicon.ico') }}">
+	<style>
+		html,
+		body {
+			margin: 0;
+			height: calc(100% - 40px);
+			display: flex;
+			flex-direction: column;
+		}
+
+		h2 {
+			margin: 0;
+			padding: 10px;
+		}
+
+		#solarData {
+			flex: 1;
+			width: 100%;
+		}
+	</style>
+</head>
+
+<body>
+	<h2>{% block heading %}{% endblock %}</h2>
+
+	<script src="/static/js/chart.js"></script>
+	<script src="/static/js/hammer.js"></script>
+	<script src="/static/js/chartjs-plugin-zoom.min.js"></script>
+	<script src="/static/js/luxon.min.js"></script>
+	<script src="/static/js/chartjs-adapter-luxon@1.js"></script>
+
+	<button onclick="resetZoom()" style="margin-bottom: 10px; padding: 5px 10px; cursor: pointer;">
+		Zoom zurücksetzen
+	</button>
+
+	<canvas id="solarData"></canvas>
+
+	<script>
+		// Shared global variables/functions
+		let chart = null;
+		const WINDOW_SECONDS = 24 * 60 * 60;
+		let lastTimestamp = 0;
+		let firstTimestamp = 0;
+
+		function resetZoom() {
+			if (chart) {
+				chart.resetZoom();
+			}
+		}
+	</script>
+
+	{% block scripts %}{% endblock %}
+</body>
+
+</html>
