@@ -1,4 +1,4 @@
-from flask import Flask, request, redirect, jsonify, render_template, url_for, Response
+from flask import Flask, request, redirect, jsonify, render_template, url_for, Response, send_from_directory
 import os
 import sqlite3
 import time
@@ -193,6 +193,10 @@ def filteredLog():
 	return Response(data, mimetype='text/plain')
 
 #### HTML
+
+@app.route('/favicon.ico')
+def favicon():
+    return send_from_directory(os.path.join(BASE_DIR, 'static'), 'favicon.ico', mimetype='image/vnd.microsoft.icon')
 
 @app.route("/")
 def redirect_dashboard():
