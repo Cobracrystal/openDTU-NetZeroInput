@@ -177,17 +177,17 @@ def solar_metadata():
 	return jsonify(getSolarMetadata())
 
 #### RAW TEXT
-@app.route("/dashboard/logs/fullLog.txt")
+@app.route("/dashboard/txt/fullLog.txt")
 def fullLog():
 	data = get_recent_logInfo(lineCount=50000)
 	return Response(data, mimetype='text/plain')
 
-@app.route("/dashboard/logs/recentLog.txt")
+@app.route("/dashboard/txt/recentLog.txt")
 def recentLog():
 	data = get_recent_logInfo(lineCount=50)
 	return Response(data, mimetype='text/plain')
 
-@app.route("/dashboard/logs/importantLog.txt")
+@app.route("/dashboard/txt/importantLog.txt")
 def importantLog():
 	data = get_important_logInfo()
 	return Response(data, mimetype='text/plain')
@@ -214,6 +214,22 @@ def dashboardIndividualPower():
 @app.route("/dashboard/individualVoltage")
 def dashboardIndividualVoltage():
 	return render_template("indexVoltage.html", active_page="individualVoltage")
+
+@app.route("/dashboard/logs/recent")
+def dashboardRecentLog():
+	data = get_recent_logInfo(lineCount=50)
+	return render_template("log_view.html", 
+						log_data=data,
+						title="Recent Logs",
+						active_page="logs_recent")
+
+@app.route("/dashboard/logs/important")
+def dashboardFilteredLog():
+	data = get_important_logInfo()
+	return render_template("log_view.html", 
+						log_data=data,
+						title="Filtered Logs",
+						active_page="logs_important")
 
 if __name__ == "__main__":
 	app.run(host="0.0.0.0", port=5000, debug=True)
