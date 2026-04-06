@@ -59,7 +59,7 @@ def get_recent_logInfo(lineCount = 50):
 				f.seek(pointer + 1)
 			else:
 				f.seek(0)
-		return '\n'.join([line.decode('utf-8').strip() for line in f.readlines()])
+			return '\n'.join([line.decode('utf-8').strip() for line in f.readlines()])
 	except Exception as e:
 		str = f"Error reading log file {path}: {e}"
 		print(str)
