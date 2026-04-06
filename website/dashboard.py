@@ -28,7 +28,6 @@ def query_db(query, args=()):
 def get_cur_logFile():
 	return os.path.normpath(os.path.join(DATA_PATH, f'{(datetime.now()).strftime("%Y-%m-%d")}_log.txt'))
 
-# extract lines with [INFO], [WARNING], [ERROR]
 def get_important_logInfo():
 	path = get_cur_logFile()
 	importantLines = []
