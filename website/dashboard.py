@@ -32,11 +32,11 @@ def get_cur_logFile():
 def get_important_logInfo():
 	path = get_cur_logFile()
 	importantLines = []
-	pattern = re.compile("(?:\[ERROR\]|\[WARNING\]|\[INFO\])")
+	pattern = re.compile(r"\[(?:ERROR|WARNING|INFO)\]")
 	try:
 		with open(path, "r", encoding='UTF-8') as logFile:
 			for line in logFile:
-				if pattern.match(line):
+				if pattern.search(line):
 					importantLines.append(line.strip())
 	except FileNotFoundError:
 		print(f"Log file {path} not found.")
@@ -187,8 +187,8 @@ def recentLog():
 	data = get_recent_logInfo(lineCount=50)
 	return Response(data, mimetype='text/plain')
 
-@app.route("/dashboard/logs/filteredLog.txt")
-def filteredLog():
+@app.route("/dashboard/logs/importantLog.txt")
+def importantLog():
 	data = get_important_logInfo()
 	return Response(data, mimetype='text/plain')
 
