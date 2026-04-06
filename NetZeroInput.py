@@ -88,7 +88,7 @@ def log(text, style=LogStyle.DEFAULT):
 	if logInTextFile:
 		fName = getFileName() + '_log.txt'
 		try:
-			with open(fName, "a+") as f:
+			with open(fName, "a+", encoding='UTF-8') as f:
 				clean_text = re.sub(r'\x1b\[[0-9;]*[mGKH]', '', logOutput)
 				f.write(clean_text)
 		except Exception as e:
@@ -307,7 +307,7 @@ def update():
 			if not batteryWasBelowLastThresholds[i]: # Log once.
 				batteryWasBelowLastThresholds = [False] * len(battery_voltage_thresholds)
 				batteryWasBelowLastThresholds[i] = True
-				recovery_voltage = battery_voltage_thresholds[i]+battery_voltage_recovery_buffers[i]
+				recovery_voltage = round(battery_voltage_thresholds[i]+battery_voltage_recovery_buffers[i], 2)
 				log(f'Battery voltage ({battery_voltage}V) below threshold {i+1} ({battery_voltage_thresholds[i]}V).', LogStyle.INFO)
 				log(f'Capping Limit to {battery_voltage_threshold_caps[i] * 100}% until voltage drops below additional threshold or rises above {recovery_voltage}V again. (Threshold + Buffer)', LogStyle.INFO)
 			else:
@@ -372,9 +372,9 @@ data_buffer = []
 metadataIsSynced = False
 
 os.chdir('data') # set working directory
-log(f'Program Start: [{(datetime.now()).strftime("%Y-%m-%d %H:%M:%S")}]')
-log(f'Sunrise: {sunrise.time()}, Sunset: {sunset.time()}')
-log(f'Starting..')
+log(f'Program Start: [{(datetime.now()).strftime("%Y-%m-%d %H:%M:%S")}]', LogStyle.INFO)
+log(f'Sunrise: {sunrise.time()}, Sunset: {sunset.time()}', LogStyle.INFO)
+log(f'Starting..', LogStyle.INFO)
 
 # SQL INIT
 conn = sqlite3.connect(DB_FILE, timeout=5)

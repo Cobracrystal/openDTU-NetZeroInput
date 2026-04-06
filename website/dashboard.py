@@ -2,6 +2,8 @@ from flask import Flask, request, redirect, jsonify, render_template, url_for
 import os
 import sqlite3
 import time
+import re
+from datetime import datetime
 
 DB_FILE_NAME = "solar_data.db"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -22,6 +24,46 @@ def query_db(query, args=()):
 		"columns": columns,
 		"values": data
 	}
+
+def get_cur_logFile():
+	return f'{(datetime.now()).strftime("%Y-%m-%d")}_log.txt'
+
+# extract lines with [INFO], [WARNING], [ERROR]
+def get_important_logInfo():
+	path = get_cur_logFile()
+	importantLines = []
+	pattern = re.compile("(?:\[ERROR\]|\[WARNING\]|\[INFO\])")
+	try:
+		with open(path, "r", encoding='UTF-8') as logFile:
+			for line in logFile:
+				if pattern.match(line):
+					importantLines.append(line.strip())
+	except FileNotFoundError:
+		print(f"Log file {path} not found.")
+		importantLines.append(f"Log file {path} not found.")
+	return '\n'.join(importantLines)
+
+def get_recent_logInfo(lineCount = 50):
+	path = get_cur_logFile()
+	counter = 0
+	try:
+		with open(path, "rb") as f:
+			f.seek(0, os.SEEK_END)
+			pointer = f.tell()
+			while pointer > 0 and counter < lineCount:
+				pointer -= 1
+				f.seek(pointer)
+				if f.read(1) == b'\n':
+					counter += 1
+			if counter == lineCount:
+				f.seek(pointer + 1)
+			else:
+				f.seek(0)
+		return '\n'.join([line.decode('utf-8').strip() for line in f.readlines()])
+	except Exception as e:
+		str = f"Error reading log file {path}: {e}"
+		print(str)
+		return str
 
 def get_since_timestamp(minutes):
 	return int(time.time()) - (minutes * 60)
@@ -134,6 +176,18 @@ def solar_voltage_update():
 def solar_metadata():
 	return jsonify(getSolarMetadata())
 
+#### RAW TEXT
+@app.route("/dashboard/logs/fullLog.txt")
+def fullLog():
+	return get_recent_logInfo(lineCount=50000)
+
+@app.route("/dashboard/logs/recentLog.txt")
+def recentLog():
+	return get_recent_logInfo(lineCount=50)
+
+@app.route("/dashboard/logs/filteredLog.txt")
+def filteredLog():
+	return get_important_logInfo()
 
 #### HTML
 
