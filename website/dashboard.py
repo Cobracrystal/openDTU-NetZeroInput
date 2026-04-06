@@ -7,8 +7,8 @@ from datetime import datetime
 
 DB_FILE_NAME = "solar_data.db"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_FILE = os.path.normpath(os.path.join(BASE_DIR, '..', 'data', DB_FILE_NAME))
-
+DATA_PATH = os.path.normpath(os.path.join(BASE_DIR, '..', 'data'))
+DB_FILE = os.path.normpath(os.path.join(DATA_PATH, DB_FILE_NAME))
 BATTERY_NAME = "Batterie-Lader"
 
 app = Flask(__name__)
@@ -26,7 +26,7 @@ def query_db(query, args=()):
 	}
 
 def get_cur_logFile():
-	return f'{(datetime.now()).strftime("%Y-%m-%d")}_log.txt'
+	return os.path.normpath(os.path.join(DATA_PATH, f'{(datetime.now()).strftime("%Y-%m-%d")}_log.txt'))
 
 # extract lines with [INFO], [WARNING], [ERROR]
 def get_important_logInfo():
