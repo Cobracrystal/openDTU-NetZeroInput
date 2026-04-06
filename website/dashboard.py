@@ -1,4 +1,4 @@
-from flask import Flask, request, redirect, jsonify, render_template, url_for
+from flask import Flask, request, redirect, jsonify, render_template, url_for, Response
 import os
 import sqlite3
 import time
@@ -179,15 +179,18 @@ def solar_metadata():
 #### RAW TEXT
 @app.route("/dashboard/logs/fullLog.txt")
 def fullLog():
-	return get_recent_logInfo(lineCount=50000)
+	data = get_recent_logInfo(lineCount=50000)
+	return Response(data, mimetype='text/plain')
 
 @app.route("/dashboard/logs/recentLog.txt")
 def recentLog():
-	return get_recent_logInfo(lineCount=50)
+	data = get_recent_logInfo(lineCount=50)
+	return Response(data, mimetype='text/plain')
 
 @app.route("/dashboard/logs/filteredLog.txt")
 def filteredLog():
-	return get_important_logInfo()
+	data = get_important_logInfo()
+	return Response(data, mimetype='text/plain')
 
 #### HTML
 
