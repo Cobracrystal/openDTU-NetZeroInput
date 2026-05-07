@@ -15,6 +15,7 @@
 		gap: 20px;
 		width: 100%;
 		padding-top: 10px;
+		margin-bottom: 40px; /* <--- ADD THIS: Space between grid and status card */
 	}
 
 	.tile {
@@ -64,6 +65,8 @@
 		border-radius: 8px;
 		padding: 20px;
 		box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+		margin-top: 20px; /* <--- ADD THIS: Extra safety margin */
+		margin-bottom: 20px; /* Space at the very bottom of the page */
 	}
 
 	.status-card h4 {
@@ -107,7 +110,7 @@
 
 	<!-- Tile 4: Logs -->
 	<a href="/dashboard/logs/recent" class="tile">
-		<span class="tile-icon">📊</span>
+		<span class="tile-icon">📝</span>
 		<h3>Systemlog (50 Zeilen)</h3>
 		<p>Aktuelle Ereignisse und Statusmeldungen</p>
 	</a>
