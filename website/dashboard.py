@@ -209,7 +209,7 @@ def dashboardMain():
 						limits="Unter 50.4V -> 75%, Recovery Buffer: 0.6V (51V)\nUnter 50V -> 50%, Recovery Buffer: 0.7V (50.7V)\nUnter 49.6V -> 0%, Recovery Buffer: 1.7V (51.3V)")
 
 @app.route("/dashboard/grid")
-def dashboardMain():
+def dashboardGrid():
 	return render_template("indexGrid.html", active_page="grid")
 
 @app.route("/dashboard/individualPower")
