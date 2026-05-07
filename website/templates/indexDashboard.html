@@ -8,6 +8,7 @@
 
 {% block content %}
 <style>
+	/* Grid for the main navigation tiles */
 	.dashboard-grid {
 		display: grid;
 		grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
@@ -24,7 +25,7 @@
 		text-decoration: none;
 		color: var(--dark-blue);
 		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
-		transition: transform 0.2s, box-shadow 0.2s, background-color 0.2s;
+		transition: all 0.2s ease-in-out;
 		display: flex;
 		flex-direction: column;
 		align-items: center;
@@ -40,14 +41,13 @@
 		border-color: var(--primary-green);
 	}
 
-	.tile i {
+	.tile-icon {
 		font-size: 3rem;
 		margin-bottom: 15px;
-		color: var(--primary-green);
 	}
 
 	.tile h3 {
-		margin: 10px 0 5px 0;
+		margin: 5px 0;
 		font-size: 1.4rem;
 	}
 
@@ -57,51 +57,79 @@
 		font-size: 0.95rem;
 	}
 
-	/* Small info footer for your 'limits' data */
-	.limits-footer {
-		margin-top: auto;
-		padding: 15px;
-		background: #1e1e1e;
-		color: #18bc9c;
+	/* Cleaned up Status Box for Limits */
+	.status-card {
+		background: #ffffff;
+		border-left: 5px solid var(--primary-green);
 		border-radius: 8px;
-		font-family: monospace;
-		font-size: 0.85em;
+		padding: 20px;
+		box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+	}
+
+	.status-card h4 {
+		margin: 0 0 10px 0;
+		color: var(--dark-blue);
+		font-size: 1.1rem;
+		text-transform: uppercase;
+		letter-spacing: 0.5px;
+	}
+
+	.status-content {
+		color: #444;
+		font-family: inherit; /* Back to normal font */
+		line-height: 1.6;
+		white-space: pre-line; /* Keeps your 3 lines on separate lines */
+		font-size: 1rem;
 	}
 </style>
 
 <div class="dashboard-grid">
 	<!-- Tile 1: Gesamtdaten -->
 	<a href="/dashboard/grid" class="tile">
-		<div style="font-size: 40px;">📊</div>
+		<span class="tile-icon">📊</span>
 		<h3>Gesamtdaten</h3>
-		<p>Vollständige Übersicht aller Netzdaten</p>
+		<p>Wechselrichter sowie Netzdaten</p>
 	</a>
 
 	<!-- Tile 2: Solar Power -->
 	<a href="/dashboard/individualPower" class="tile">
-		<div style="font-size: 40px;">⚡</div>
+		<span class="tile-icon">📊</span>
 		<h3>Solarleistung</h3>
-		<p>Individuelle Leistung der Zellen (W)</p>
+		<p>Leistung der individuellen Solarzellen (W)</p>
 	</a>
 
 	<!-- Tile 3: Solar Voltage -->
 	<a href="/dashboard/individualVoltage" class="tile">
-		<div style="font-size: 40px;">🔋</div>
+		<span class="tile-icon">📊</span>
 		<h3>Solarspannung</h3>
-		<p>Spannungswerte der Einzelmodule (V)</p>
+		<p>Spannung der individuellen Solarzellen (V)</p>
 	</a>
 
 	<!-- Tile 4: Logs -->
 	<a href="/dashboard/logs/recent" class="tile">
-		<div style="font-size: 40px;">📜</div>
-		<h3>Systemlog</h3>
+		<span class="tile-icon">📊</span>
+		<h3>Systemlog (50 Zeilen)</h3>
 		<p>Aktuelle Ereignisse und Statusmeldungen</p>
+	</a>
+	
+	<!-- Tile 5: Logs -->
+	<a href="/dashboard/logs/important" class="tile">
+		<div style="font-size: 40px;">📝</div>
+		<h3>Systemlog (Gefiltert)</h3>
+		<p>Wichtige Ereignisse und Statusmeldungen</p>
+	</a>
+
+	<!-- Tile 6: SSH -->
+	<a href="https://ssh.cobracrystal.com" class="tile">
+		<div style="font-size: 40px;">🖥️</div>
+		<h3>SSH-Konsole</h3>
+		<p>Direktzugriff auf Raspi (Benötigt Private Key, Passwort)</p>
 	</a>
 </div>
 
-<div style="margin-top: 30px;">
-	<h4 style="color: #7f8c8d; margin-bottom: 10px;">System Limits & Status</h4>
-	<div class="limits-footer">
+<div class="status-card">
+	<h4>Wechselrichterlimits</h4>
+	<div class="status-content">
 		{{ limits }}
 	</div>
 </div>
