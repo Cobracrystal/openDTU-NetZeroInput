@@ -8,6 +8,20 @@
 
 {% block content %}
 <style>
+	html, body {
+		overflow: auto !important;
+	}
+
+	main {
+		overflow-y: visible;
+		height: auto;
+	}
+
+	.wrapper {
+		height: auto;
+		min-height: 100vh;
+	}
+
 	/* Grid for the main navigation tiles */
 	.dashboard-grid {
 		display: grid;
