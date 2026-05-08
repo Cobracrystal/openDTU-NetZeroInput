@@ -1,4 +1,4 @@
-from enum import Enum, auto
+from enum import IntEnum, auto
 import time
 import suntime
 from datetime import datetime, timedelta
@@ -10,25 +10,6 @@ from colorama import init as colorama_init
 import re
 import os
 import sqlite3
-
-# CONFIGURATION
-username = "admin"
-password = open(r"openDTUAuth.pw").read().strip()
-urlOpenDTU = "http://192.168.178.31"
-urlBitshake = "http://192.168.178.40"
-portOpenDTU = 80
-latitude = 50.988768 # for calculating sunrise/sunset
-longitude = 7.190650 # for calculating sunrise/sunset
-update_interval = 3 # Time in seconds between each update to dtu limit
-saveInterval = 5 # Time in seconds between each write to database. Datapoints are gotten every second regardless
-checkInterval = 1 # Time in seconds between each check
-logInTextFile = True # Enable if you want all console output to be logged
-storeData = True # Whether to store received data in SQL
-# battery_voltage_thresholds = [12.4*4, 12.5*4, 12.6*4] # Threshold below which connection with battery is reduced.
-battery_voltage_thresholds = [49.6, 50, 50.4] # Threshold below which connection with battery is reduced.
-battery_voltage_threshold_caps = [0, 0.5, 0.75] # Multipliers for max_power (caps max power for inverter when corresponding threshold is reached)
-battery_voltage_recovery_buffers = [1.7, 0.7, 0.6] # Multipliers for max_power (caps max power for inverter when corresponding threshold is reached)
-DB_FILE = "solar_data.db"
 
 
 @dataclass
@@ -46,52 +27,57 @@ class SolarMeasurements:
 	grid_consumption: float # the grid consumption value (if balanced, is around 0W)
 	dc_list: list[DCInput] # list of individual DC inputs (battery + solar panels)
 
-class LogStyle(Enum):
-	DEFAULT = auto()
-	WARNING = auto()
-	INFO = auto()
-	ERROR = auto()
+class LogLevel(IntEnum):
+	DEFAULT = 4
+	WARNING = 3
+	INFO = 2
+	ERROR = 1
 	
 def getFileName():
 	return f'{(datetime.now()).strftime("%Y-%m-%d")}'
 
 # For multiline-styles, requires setting that style for each line.
-def log(text, style=LogStyle.DEFAULT):
+def log(text, style=LogLevel.DEFAULT):
 	fdate = datetime.now().strftime("%H:%M:%S")
 	timestamp_raw = f'[{fdate}]'
 	timestamp = f'{Fore.LIGHTYELLOW_EX}{timestamp_raw}{Style.RESET_ALL}'
 	BADEVENT_COLOR = f'{Back.LIGHTRED_EX}{Fore.BLACK}'
 	styles = {
-		LogStyle.DEFAULT: "",
-		LogStyle.WARNING: f'{BADEVENT_COLOR}[WARNING]{Style.RESET_ALL} ',
-		LogStyle.INFO: f'{Back.LIGHTYELLOW_EX}{Fore.BLACK}[INFO]{Style.RESET_ALL} ',
-		LogStyle.ERROR: f'{BADEVENT_COLOR}[ERROR] ' # the entire error message is red
+		LogLevel.DEFAULT: "",
+		LogLevel.WARNING: f'{BADEVENT_COLOR}[WARNING]{Style.RESET_ALL} ',
+		LogLevel.INFO: f'{Back.LIGHTYELLOW_EX}{Fore.BLACK}[INFO]{Style.RESET_ALL} ',
+		LogLevel.ERROR: f'{BADEVENT_COLOR}[ERROR] ' # the entire error message is red
 	}
 	tags_raw = {
-		LogStyle.DEFAULT: "",
-		LogStyle.WARNING: f'[WARNING] ',
-		LogStyle.INFO: f'[INFO] ',
-		LogStyle.ERROR: f'[ERROR] '
+		LogLevel.DEFAULT: "",
+		LogLevel.WARNING: f'[WARNING] ',
+		LogLevel.INFO: f'[INFO] ',
+		LogLevel.ERROR: f'[ERROR] '
 	}
+	# Calculate indentation
 	prefix_width = len(timestamp_raw) + 1 + len(tags_raw.get(style, ""))
 	indent = " " * prefix_width
 	lines = str(text).splitlines()
-	logOutput = ""
-	for i, line in enumerate(lines):
-		if i == 0:
-			line_content = f"{timestamp} {styles.get(style, '')}{line}"
-		elif style is LogStyle.ERROR:
-			line_content = f"{indent}{BADEVENT_COLOR}{line}"
-		else:
-			line_content = f"{indent}{line}"
-		print(line_content + Style.RESET_ALL)
-		logOutput += line_content + '\n'
-	if logInTextFile:
+	# Console Output
+	if style <= logLevelConsole:
+		for i, line in enumerate(lines):
+			if i == 0:
+				line_content = f"{timestamp} {styles.get(style, '')}{line}"
+			elif style == LogLevel.ERROR:
+				line_content = f"{indent}{BADEVENT_COLOR}{line}"
+			else:
+				line_content = f"{indent}{line}"
+			print(line_content + Style.RESET_ALL)
+	# File Output
+	if style <= logLevelTextFile:
+		log_content = ""
+		for i, line in enumerate(lines):
+			tag = tags_raw.get(style, "") if i == 0 else indent
+			log_content += f"{timestamp_raw} {tag}{line}"
 		fName = getFileName() + '_log.txt'
 		try:
 			with open(fName, "a+", encoding='UTF-8') as f:
-				clean_text = re.sub(r'\x1b\[[0-9;]*[mGKH]', '', logOutput)
-				f.write(clean_text)
+				f.write(log_content)
 		except Exception as e:
 			print(f'{timestamp} {BADEVENT_COLOR}ERROR: FAILED TO WRITE TO LOG FILE.{Style.RESET_ALL}')
 
@@ -106,7 +92,7 @@ def initSQLMetadata(dc_list: list[DCInput]):
 		conn.commit()
 		return True
 	except sqlite3.Error as e:
-		log(f"Metadata sync failed: {e}", LogStyle.ERROR)
+		log(f"Metadata sync failed: {e}", LogLevel.ERROR)
 		return False
 	
 def saveSQL():
@@ -136,7 +122,7 @@ def saveSQL():
 		cursor.executemany("INSERT OR IGNORE INTO dc_inputs VALUES (?, ?, ?, ?)", rows_dc_input)
 		conn.commit()
 	except sqlite3.Error as e:
-		log(f'Saving failed: {e}', style=LogStyle.ERROR)
+		log(f'Saving failed: {e}', style=LogLevel.ERROR)
 		conn.rollback()
 	finally:
 		data_buffer.clear()
@@ -148,7 +134,7 @@ def validate_consumption(new_value):
 	global grid_history
 	# these values are ALWAYS false, so don't bother updating history or any other checks
 	if new_value > 50000 or new_value < -10000:
-		log(f"Ignoring impossible BitMeter reading: {new_value}W", LogStyle.WARNING)
+		log(f"Ignoring impossible BitMeter reading: {new_value}W", LogLevel.INFO)
 		return grid_history[-1]
 	last_value = grid_history[-1]
 	# update sliding window
@@ -159,7 +145,7 @@ def validate_consumption(new_value):
 		return new_value
 	else: # unsure
 		better_value = sorted(grid_history)[1]
-		log(f"Validating suspicious Bitmeter reading: {new_value}W -> {better_value}W", LogStyle.WARNING)
+		log(f"Validating suspicious Bitmeter reading: {new_value}W -> {better_value}W", LogLevel.INFO)
 		return better_value
 	
 def get_openDTU_data():
@@ -172,15 +158,15 @@ def get_openDTU_data():
 		runtime_info = dtu.inverterGetRuntimeInfo(main_inverter)
 		return inverter_limit_config, runtime_info
 	except requests.exceptions.Timeout:
-		log(f"OpenDTU request timed out.", LogStyle.ERROR)
+		log(f"OpenDTU request timed out.", LogLevel.WARNING)
 		return None
 	except requests.exceptions.RequestException as e:
-		log(f"Request to openDTU failed with exception {e}", LogStyle.ERROR)
+		log(f"Request to openDTU failed with exception {e}", LogLevel.ERROR)
 		return None
 	except BaseException as e:
 		if type(e) == KeyboardInterrupt:
 			raise
-		log(f"Could not parse data from openDTU: {e}", LogStyle.ERROR)
+		log(f"Could not parse data from openDTU: {e}", LogLevel.ERROR)
 		return None
 	
 def get_BitMeter_data():
@@ -190,13 +176,13 @@ def get_BitMeter_data():
 			bitMeter_data = response.json()
 			return bitMeter_data["StatusSNS"]["LK13BE"]["Power"]
 		else:
-			log(f"BitMeter returned Status Code {response.status_code}", LogStyle.ERROR)
+			log(f"BitMeter returned Status Code {response.status_code}", LogLevel.ERROR)
 			return None
 	except requests.exceptions.Timeout:
-		log(f"BitMeter request timed out.", LogStyle.ERROR)
+		log(f"BitMeter request timed out.", LogLevel.WARNING)
 		return None
 	except requests.exceptions.RequestException as e:
-		log(f"Request to BitMeter failed with exception {e}", LogStyle.ERROR)
+		log(f"Request to BitMeter failed with exception {e}", LogLevel.ERROR)
 		return None
 	except BaseException as e:
 		if type(e) == KeyboardInterrupt:
@@ -269,9 +255,9 @@ def update():
 		if inverterWasReachable:
 			inverterWasReachable = False
 			if batteryWasOff and not batteryIsOn:
-				log("No connection to inverter. Battery was and is offline, so no actions necessary.", LogStyle.INFO)
+				log("No connection to inverter. Battery was and is offline, so no actions necessary.", LogLevel.INFO)
 			else:
-				log('No connection to inverter. Battery was on, so this is unusual. Skipping logs until reachable.', LogStyle.INFO)
+				log('No connection to inverter. Battery was on, so this is unusual. Skipping logs until reachable.', LogLevel.INFO)
 		return False
 	# Nur updaten wenn update_interval verstrichen ist
 	if ticks % (update_interval // checkInterval) != 0:
@@ -280,9 +266,9 @@ def update():
 	if not inverterWasReachable:
 		inverterWasReachable = True
 		if batteryWasOff and not batteryIsOn:
-			log("Reestablished connection to inverter. Battery is still off, continue waiting.", LogStyle.INFO)
+			log("Reestablished connection to inverter. Battery is still off, continue waiting.", LogLevel.INFO)
 		else:
-			log('Reestablished connection to inverter. Continuing script.', LogStyle.INFO)
+			log('Reestablished connection to inverter. Continuing script.', LogLevel.INFO)
 	# Wechselrichter gibt nicht old_limit_a Watt aus, sondern weniger, außer das limit ist 0.
 	if ac_power_output > 0 and old_limit_a > 0:
 		limit_ratio = old_limit_a / ac_power_output
@@ -290,7 +276,7 @@ def update():
 		limit_ratio = 1
 	if batteryIsOn:
 		if batteryWasOff:
-			log('Battery is delivering electricity again. Continuing script.', LogStyle.INFO)
+			log('Battery is delivering electricity again. Continuing script.', LogLevel.INFO)
 			batteryWasOff = False
 		# Calculate base limit. Will be clamped to max_power later.
 		new_limit_a = round(limit_ratio * (grid_power_consumption + ac_power_output)) # works even if negative.
@@ -309,26 +295,26 @@ def update():
 				batteryWasBelowLastThresholds = [False] * len(battery_voltage_thresholds)
 				batteryWasBelowLastThresholds[i] = True
 				recovery_voltage = round(battery_voltage_thresholds[i]+battery_voltage_recovery_buffers[i], 2)
-				log(f'Battery voltage ({battery_voltage}V) below threshold {i+1} ({battery_voltage_thresholds[i]}V).', LogStyle.INFO)
-				log(f'Capping Limit to {battery_voltage_threshold_caps[i] * 100}% until voltage drops below additional threshold or rises above {recovery_voltage}V again. (Threshold + Buffer)', LogStyle.INFO)
+				log(f'Battery voltage ({battery_voltage}V) below threshold {i+1} ({battery_voltage_thresholds[i]}V).', LogLevel.INFO)
+				log(f'Capping Limit to {battery_voltage_threshold_caps[i] * 100}% until voltage drops below additional threshold or rises above {recovery_voltage}V again. (Threshold + Buffer)', LogLevel.INFO)
 			else:
 				if battery_voltage_threshold_caps[i] == 0:
 					return False
 			max_power *= battery_voltage_threshold_caps[i]
 		else:
 			if any(batteryWasBelowLastThresholds):
-				log(f'Battery voltage is above threshold again ({battery_voltage}V). Lifting all Caps.', LogStyle.INFO)
+				log(f'Battery voltage is above threshold again ({battery_voltage}V). Lifting all Caps.', LogLevel.INFO)
 				batteryWasBelowLastThresholds = [False] * len(battery_voltage_thresholds)
 	else:
 		if batteryWasOff: # Battery was off, so it stays off
 			return True
 		batteryWasOff = True
 		if solarIsOn:
-			log(f'Battery is off ({battery_voltage}V), solar panels are delivering power ({solar_power}W). Setting Limit to 100 and sleep.', LogStyle.INFO)
+			log(f'Battery is off ({battery_voltage}V), solar panels are delivering power ({solar_power}W). Setting Limit to 100 and sleep.', LogLevel.INFO)
 			new_limit_a = max_power
 			batteryWasBelowLastThresholds = [False] * len(battery_voltage_thresholds) # Reset on the new day
 		else:
-			log(f'Battery is off ({battery_voltage}V), solar panels are not delivering power ({solar_power}W). Setting Limit to 0 and sleep.', LogStyle.INFO)
+			log(f'Battery is off ({battery_voltage}V), solar panels are not delivering power ({solar_power}W). Setting Limit to 0 and sleep.', LogLevel.INFO)
 			new_limit_a = 0
 	new_limit_a = clamp(new_limit_a, 0, max_power)
 	new_limit_r = round(100 * new_limit_a / max_power, ndigits=1) if max_power > 0 else 0 # necessary to avoid division by 0
@@ -339,17 +325,39 @@ def update():
 	if (new_limit_a != old_limit_a):
 		# wechselrichter beschäftigt -> skip
 		if limit_set_status == "Pending":
-			log(f'New Limit would be {Fore.LIGHTCYAN_EX}{new_limit_r}% / {new_limit_a}W{Style.RESET_ALL}, but inverter is busy. Skipping.', LogStyle.WARNING)
+			log(f'New Limit would be {Fore.LIGHTCYAN_EX}{new_limit_r}% / {new_limit_a}W{Style.RESET_ALL}, but inverter is busy. Skipping.', LogLevel.INFO)
 			return True
 		log(f'New Limit: {Fore.LIGHTCYAN_EX}{new_limit_r}% / {new_limit_a}W{Style.RESET_ALL} ({round(new_limit_a/limit_ratio)} = {grid_power_consumption} + {ac_power_output})')
 		setLimitResponse = dtu.inverterSetLimitConfig(main_inverter, {"limit_type":0, "limit_value":new_limit_a})
 		limitWasUnchanged = False
 		if (setLimitResponse['type'] != "success"):
-			log(f'Could not set inverter limit: {setLimitResponse}', LogStyle.ERROR)
+			log(f'Could not set inverter limit: {setLimitResponse}', LogLevel.ERROR)
 	elif not limitWasUnchanged:
 		log("Current and new Limit match, no update necessary.")
 		limitWasUnchanged = True
 	return True
+
+
+# CONFIGURATION
+username = "admin"
+password = open(r"openDTUAuth.pw").read().strip()
+urlOpenDTU = "http://192.168.178.31"
+urlBitshake = "http://192.168.178.40"
+portOpenDTU = 80
+latitude = 50.988768 # for calculating sunrise/sunset
+longitude = 7.190650 # for calculating sunrise/sunset
+update_interval = 3 # Time in seconds between each update to dtu limit
+saveInterval = 5 # Time in seconds between each write to database. Datapoints are gotten every second regardless
+checkInterval = 1 # Time in seconds between each check
+# Note that this is all within journalctl anyway.
+logLevelConsole = LogLevel.WARNING # Only log WARNING and ERROR in console
+logLevelTextFile = LogLevel.INFO # Only log INFO, WARNING, ERROR in file. Set to 0 to log nothing.
+storeData = True # Whether to store received data in SQL
+# battery_voltage_thresholds = [12.4*4, 12.5*4, 12.6*4] # Threshold below which connection with battery is reduced.
+battery_voltage_thresholds = [49.6, 50, 50.4] # Threshold below which connection with battery is reduced.
+battery_voltage_threshold_caps = [0, 0.5, 0.75] # Multipliers for max_power (caps max power for inverter when corresponding threshold is reached)
+battery_voltage_recovery_buffers = [1.7, 0.7, 0.6] # Multipliers for max_power (caps max power for inverter when corresponding threshold is reached)
+DB_FILE = "solar_data.db"
 
 # EXECUTE SECTION
 colorama_init()
@@ -373,9 +381,9 @@ data_buffer = []
 metadataIsSynced = False
 
 os.chdir('data') # set working directory
-log(f'Program Start: [{(datetime.now()).strftime("%Y-%m-%d %H:%M:%S")}]', LogStyle.INFO)
-log(f'Sunrise: {sunrise.time()}, Sunset: {sunset.time()}', LogStyle.INFO)
-log(f'Starting..', LogStyle.INFO)
+log(f'Program Start: [{(datetime.now()).strftime("%Y-%m-%d %H:%M:%S")}]', LogLevel.INFO)
+log(f'Sunrise: {sunrise.time()}, Sunset: {sunset.time()}', LogLevel.INFO)
+log(f'Starting..', LogLevel.INFO)
 
 # SQL INIT
 conn = sqlite3.connect(DB_FILE, timeout=5)
@@ -427,6 +435,6 @@ try:
 		if sleep_time > 0:
 			time.sleep(sleep_time)
 		elif sleep_time < -10 and ticks % 30 == 0:
-			log(f"Script is {round(abs(sleep_time),ndigits=1)} seconds behind!", LogStyle.WARNING)
+			log(f"Script is {round(abs(sleep_time),ndigits=1)} seconds behind!", LogLevel.WARNING)
 except KeyboardInterrupt:
-	log('User Interruption. Closing...', LogStyle.INFO)
+	log('User Interruption. Closing...', LogLevel.INFO)
