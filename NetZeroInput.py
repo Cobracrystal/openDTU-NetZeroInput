@@ -29,8 +29,8 @@ class SolarMeasurements:
 
 class LogLevel(IntEnum):
 	DEFAULT = 4
-	WARNING = 3
-	INFO = 2
+	INFO = 3
+	WARNING = 2
 	ERROR = 1
 	
 def getFileName():
