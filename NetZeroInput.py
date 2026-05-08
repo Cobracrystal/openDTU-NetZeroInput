@@ -350,7 +350,7 @@ update_interval = 3 # Time in seconds between each update to dtu limit
 saveInterval = 5 # Time in seconds between each write to database. Datapoints are gotten every second regardless
 checkInterval = 1 # Time in seconds between each check
 # Note that this is all within journalctl anyway.
-logLevelConsole = LogLevel.WARNING # Only log WARNING and ERROR in console
+logLevelConsole = LogLevel.INFO # Only log WARNING and ERROR in console
 logLevelTextFile = LogLevel.DEFAULT # Only log INFO, WARNING, ERROR in file. Set to 0 to log nothing.
 storeData = True # Whether to store received data in SQL
 # battery_voltage_thresholds = [12.4*4, 12.5*4, 12.6*4] # Threshold below which connection with battery is reduced.
