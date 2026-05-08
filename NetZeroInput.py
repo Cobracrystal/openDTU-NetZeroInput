@@ -351,7 +351,7 @@ saveInterval = 5 # Time in seconds between each write to database. Datapoints ar
 checkInterval = 1 # Time in seconds between each check
 # Note that this is all within journalctl anyway.
 logLevelConsole = LogLevel.WARNING # Only log WARNING and ERROR in console
-logLevelTextFile = LogLevel.INFO # Only log INFO, WARNING, ERROR in file. Set to 0 to log nothing.
+logLevelTextFile = LogLevel.DEFAULT # Only log INFO, WARNING, ERROR in file. Set to 0 to log nothing.
 storeData = True # Whether to store received data in SQL
 # battery_voltage_thresholds = [12.4*4, 12.5*4, 12.6*4] # Threshold below which connection with battery is reduced.
 battery_voltage_thresholds = [49.6, 50, 50.4] # Threshold below which connection with battery is reduced.
