@@ -11,6 +11,8 @@ import re
 import os
 import sqlite3
 import contextlib
+import signal
+import sys
 
 @dataclass
 class DCInput:
@@ -79,8 +81,12 @@ def log(text, style=LogLevel.DEFAULT):
 		try:
 			with open(fName, "a+", encoding='UTF-8') as f:
 				f.write(log_content)
-		except Exception as e:
+		except OSError as e:
 			print(f'{timestamp} {BADEVENT_COLOR}ERROR: FAILED TO WRITE TO LOG FILE.{Style.RESET_ALL}')
+
+def sigterm_handler(sig, frame):
+	log("Received Interrupt Signal", LogLevel.INFO)
+	sys.exit(0)
 
 def initSQLMetadata(dc_list: list[DCInput], conn: sqlite3.Connection):
 	""" To make sure all current DC inputs are registered in the metadata table."""
@@ -167,7 +173,7 @@ def get_openDTU_data():
 		log(f"Request to openDTU failed with exception {e}", LogLevel.ERROR)
 		return None
 	except BaseException as e:
-		if type(e) == KeyboardInterrupt:
+		if isinstance(e, KeyboardInterrupt):
 			raise
 		log(f"Could not parse data from openDTU: {e}", LogLevel.ERROR)
 		return None
@@ -188,7 +194,7 @@ def get_BitMeter_data():
 		log(f"Request to BitMeter failed with exception {e}", LogLevel.ERROR)
 		return None
 	except BaseException as e:
-		if type(e) == KeyboardInterrupt:
+		if isinstance(e, KeyboardInterrupt):
 			raise
 		return None
 	
@@ -382,6 +388,8 @@ last_save_time = 0
 # grid_history = [0, 0, 0] Its initialized further down
 data_buffer = []
 metadataIsSynced = False
+
+signal.signal(signal.SIGTERM, sigterm_handler)
 
 os.chdir('data') # set working directory
 log(f'Program Start: [{(datetime.now()).strftime("%Y-%m-%d %H:%M:%S")}]', LogLevel.INFO)

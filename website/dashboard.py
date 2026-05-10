@@ -15,16 +15,19 @@ BATTERY_NAME = "Batterie-Lader"
 app = Flask(__name__)
 
 def query_db(query, args=()):
-	with contextlib.closing(sqlite3.connect(DB_FILE)) as conn:
-		cur = conn.cursor()
-		cur.execute(query, args)
-		columns = [column[0] for column in cur.description]
-		data = cur.fetchall()
-	
-	return {
-		"columns": columns,
-		"values": data
-	}
+	try:
+		with contextlib.closing(sqlite3.connect(DB_FILE)) as conn:
+			cur = conn.cursor()
+			cur.execute(query, args)
+			columns = [column[0] for column in cur.description]
+			data = cur.fetchall()
+		return {
+			"columns": columns,
+			"values": data
+		}
+	except Exception as e:
+		print("received exception: " + e)
+		raise
 
 def get_cur_logFile():
 	return os.path.normpath(os.path.join(DATA_PATH, f'{(datetime.now()).strftime("%Y-%m-%d")}_log.txt'))
