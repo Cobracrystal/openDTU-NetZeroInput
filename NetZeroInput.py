@@ -57,9 +57,9 @@ def log(text, style=LogLevel.DEFAULT):
 	# Calculate indentation
 	prefix_width = len(timestamp_raw) + 1 + len(tags_raw.get(style, ""))
 	indent = " " * prefix_width
-	lines = str(text).splitlines()
 	# Console Output
 	if style <= logLevelConsole:
+		lines = str(text).splitlines()
 		for i, line in enumerate(lines):
 			if i == 0:
 				line_content = f"{timestamp} {styles.get(style, '')}{line}"
@@ -70,6 +70,7 @@ def log(text, style=LogLevel.DEFAULT):
 			print(line_content + Style.RESET_ALL)
 	# File Output
 	if style <= logLevelTextFile:
+		lines = re.sub(r'\x1b\[[0-9;]*[mGKH]', '', str(text)).splitlines()
 		log_content = ""
 		for i, line in enumerate(lines):
 			tag = tags_raw.get(style, "") if i == 0 else indent
