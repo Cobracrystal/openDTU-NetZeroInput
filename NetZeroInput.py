@@ -416,6 +416,9 @@ CREATE TABLE IF NOT EXISTS dc_inputs (
     FOREIGN KEY(inputIndex) REFERENCES dc_metadata(inputIndex)
 )
 """)
+conn.execute("""
+CREATE INDEX "INDEXTIMESTAMP" ON "dc_inputs" "timestamp"
+""")
 conn.commit()
 cursor = conn.cursor()
 
