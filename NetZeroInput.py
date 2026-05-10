@@ -10,7 +10,7 @@ from colorama import init as colorama_init
 import re
 import os
 import sqlite3
-
+import contextlib
 
 @dataclass
 class DCInput:
@@ -82,28 +82,29 @@ def log(text, style=LogLevel.DEFAULT):
 		except Exception as e:
 			print(f'{timestamp} {BADEVENT_COLOR}ERROR: FAILED TO WRITE TO LOG FILE.{Style.RESET_ALL}')
 
-def initSQLMetadata(dc_list: list[DCInput]):
+def initSQLMetadata(dc_list: list[DCInput], conn: sqlite3.Connection):
 	""" To make sure all current DC inputs are registered in the metadata table."""
 	metadata_rows = [(dc.index, dc.name) for dc in dc_list]
-	try:
-		cursor.executemany(
-			"INSERT OR REPLACE INTO dc_metadata (inputIndex, name) VALUES (?, ?)",
-			metadata_rows
-		)
-		conn.commit()
-		return True
-	except sqlite3.Error as e:
-		log(f"Metadata sync failed: {e}", LogLevel.ERROR)
-		return False
+	with contextlib.closing(conn.cursor()) as cursor:
+		try:
+			cursor.executemany(
+				"INSERT OR REPLACE INTO dc_metadata (inputIndex, name) VALUES (?, ?)",
+				metadata_rows
+			)
+			conn.commit()
+			return True
+		except sqlite3.Error as e:
+			log(f"Metadata sync failed: {e}", LogLevel.ERROR)
+			return False
 	
-def saveSQL():
+def saveSQL(conn: sqlite3.Connection):
 	global data_buffer, metadataIsSynced
 	if not data_buffer:
 		return
 	rows_measurement = []
 	rows_dc_input = []
 	if not metadataIsSynced:
-		metadataIsSynced = initSQLMetadata(data_buffer[-1].dc_list)
+		metadataIsSynced = initSQLMetadata(data_buffer[-1].dc_list, conn)
 	for dataPoint in data_buffer:
 		rows_measurement.append((
 			dataPoint.timestamp, 
@@ -118,15 +119,16 @@ def saveSQL():
 				dc.power,
 				dc.voltage
 			))
-	try:
-		cursor.executemany("INSERT OR IGNORE INTO measurements VALUES (?, ?, ?, ?)", rows_measurement)
-		cursor.executemany("INSERT OR IGNORE INTO dc_inputs VALUES (?, ?, ?, ?)", rows_dc_input)
-		conn.commit()
-	except sqlite3.Error as e:
-		log(f'Saving failed: {e}', style=LogLevel.ERROR)
-		conn.rollback()
-	finally:
-		data_buffer.clear()
+	with contextlib.closing(conn.cursor()) as cursor:
+		try:
+			cursor.executemany("INSERT OR IGNORE INTO measurements VALUES (?, ?, ?, ?)", rows_measurement)
+			cursor.executemany("INSERT OR IGNORE INTO dc_inputs VALUES (?, ?, ?, ?)", rows_dc_input)
+			conn.commit()
+		except sqlite3.Error as e:
+			log(f'Saving failed: {e}', style=LogLevel.ERROR)
+			conn.rollback()
+		finally:
+			data_buffer.clear()
 
 def clamp(value, lower, upper):
 	return max(lower, min(upper, value))
@@ -193,7 +195,7 @@ def get_BitMeter_data():
 			raise
 		return None
 	
-def update():
+def update(conn: sqlite3.Connection):
 	global ticks, main_inverter, inverterWasReachable, limitWasUnchanged, batteryWasBelowLastThresholds, batteryWasOff, last_save_time
 	ticks += 1
 	now = int(time.time())
@@ -253,7 +255,7 @@ def update():
 		))
 		last_save_time = now
 	if storeData and ticks % (saveInterval // checkInterval) == 0:
-		saveSQL()
+		saveSQL(conn)
 	# wechselrichter nicht erreichbar -> limit kann eh nicht gesetzt werden -> skip
 	if not inverterIsReachable:
 		if inverterWasReachable:
@@ -390,58 +392,57 @@ log(f'Sunrise: {sunrise.time()}, Sunset: {sunset.time()}', LogLevel.INFO)
 log(f'Starting..', LogLevel.INFO)
 
 # SQL INIT
-conn = sqlite3.connect(DB_FILE, timeout=5)
-conn.execute("PRAGMA journal_mode=WAL;")
-conn.execute("""
-CREATE TABLE IF NOT EXISTS measurements (
-	timestamp INTEGER PRIMARY KEY,
-    inverterLimit REAL,
-    acPowerOutput REAL, 
-    gridConsumption REAL
-)
-""")
-conn.execute("""
-CREATE TABLE IF NOT EXISTS dc_metadata (
-    inputIndex INTEGER PRIMARY KEY,
-    name TEXT UNIQUE
-)
-""")
-conn.execute("""
-CREATE TABLE IF NOT EXISTS dc_inputs (
-    timestamp INTEGER,
-    inputIndex INTEGER,
-    power REAL,
-    voltage REAL,
-    FOREIGN KEY(timestamp) REFERENCES measurements(timestamp)
-    FOREIGN KEY(inputIndex) REFERENCES dc_metadata(inputIndex)
-)
-""")
-conn.execute("""
-CREATE INDEX "INDEXTIMESTAMP" ON "dc_inputs" "timestamp"
-""")
-conn.commit()
-cursor = conn.cursor()
+with contextlib.closing(sqlite3.connect(DB_FILE, timeout=5)) as conn:
+	conn.execute("PRAGMA journal_mode=WAL;")
+	conn.execute("""
+	CREATE TABLE IF NOT EXISTS measurements (
+		timestamp INTEGER PRIMARY KEY,
+		inverterLimit REAL,
+		acPowerOutput REAL, 
+		gridConsumption REAL
+	)
+	""")
+	conn.execute("""
+	CREATE TABLE IF NOT EXISTS dc_metadata (
+		inputIndex INTEGER PRIMARY KEY,
+		name TEXT UNIQUE
+	)
+	""")
+	conn.execute("""
+	CREATE TABLE IF NOT EXISTS dc_inputs (
+		timestamp INTEGER,
+		inputIndex INTEGER,
+		power REAL,
+		voltage REAL,
+		FOREIGN KEY(timestamp) REFERENCES measurements(timestamp)
+		FOREIGN KEY(inputIndex) REFERENCES dc_metadata(inputIndex)
+	)
+	""")
+	conn.execute("""
+	CREATE INDEX "INDEXTIMESTAMP" ON "dc_inputs" "timestamp"
+	""")
+	conn.commit()
 
 # Seed the history to prevent a 0
-grid_power_seed_value = get_BitMeter_data()
-if grid_power_seed_value is None:
-	grid_history = [0, 0, 0]
-else:
-	grid_history = [grid_power_seed_value] * 3 
+	grid_power_seed_value = get_BitMeter_data()
+	if grid_power_seed_value is None:
+		grid_history = [0, 0, 0]
+	else:
+		grid_history = [grid_power_seed_value] * 3 
 
-# MAIN LOOP
-try:
-	next_time = time.time()
-	while True:
-		flag = update()
-		if flag:
-			next_time += checkInterval
-		else:
-			next_time += 4 * checkInterval
-		sleep_time = next_time - time.time()
-		if sleep_time > 0:
-			time.sleep(sleep_time)
-		elif sleep_time < -10 and ticks % 30 == 0:
-			log(f"Script is {round(abs(sleep_time),ndigits=1)} seconds behind!", LogLevel.WARNING)
-except KeyboardInterrupt:
-	log('User Interruption. Closing...', LogLevel.INFO)
+	# MAIN LOOP
+	try:
+		next_time = time.time()
+		while True:
+			flag = update(conn)
+			if flag:
+				next_time += checkInterval
+			else:
+				next_time += 4 * checkInterval
+			sleep_time = next_time - time.time()
+			if sleep_time > 0:
+				time.sleep(sleep_time)
+			elif sleep_time < -10 and ticks % 30 == 0:
+				log(f"Script is {round(abs(sleep_time),ndigits=1)} seconds behind!", LogLevel.WARNING)
+	except KeyboardInterrupt:
+		log('User Interruption. Closing...', LogLevel.INFO)

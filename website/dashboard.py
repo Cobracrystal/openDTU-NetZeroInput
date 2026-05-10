@@ -4,6 +4,7 @@ import sqlite3
 import time
 import re
 from datetime import datetime
+import contextlib
 
 DB_FILE_NAME = "solar_data.db"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -14,12 +15,12 @@ BATTERY_NAME = "Batterie-Lader"
 app = Flask(__name__)
 
 def query_db(query, args=()):
-	conn = sqlite3.connect(DB_FILE)
-	cur = conn.cursor()
-	cur.execute(query, args)
-	columns = [column[0] for column in cur.description]
-	data = cur.fetchall()
-	conn.close()
+	with contextlib.closing(sqlite3.connect(DB_FILE)) as conn:
+		cur = conn.cursor()
+		cur.execute(query, args)
+		columns = [column[0] for column in cur.description]
+		data = cur.fetchall()
+	
 	return {
 		"columns": columns,
 		"values": data
