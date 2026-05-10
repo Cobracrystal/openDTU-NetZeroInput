@@ -5,6 +5,8 @@ import time
 import re
 from datetime import datetime
 import contextlib
+import signal
+import sys
 
 DB_FILE_NAME = "solar_data.db"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -15,19 +17,15 @@ BATTERY_NAME = "Batterie-Lader"
 app = Flask(__name__)
 
 def query_db(query, args=()):
-	try:
-		with contextlib.closing(sqlite3.connect(DB_FILE)) as conn:
-			cur = conn.cursor()
-			cur.execute(query, args)
-			columns = [column[0] for column in cur.description]
-			data = cur.fetchall()
-		return {
-			"columns": columns,
-			"values": data
-		}
-	except Exception as e:
-		print("received exception: " + e)
-		raise
+	with contextlib.closing(sqlite3.connect(DB_FILE)) as conn:
+		cur = conn.cursor()
+		cur.execute(query, args)
+		columns = [column[0] for column in cur.description]
+		data = cur.fetchall()
+	return {
+		"columns": columns,
+		"values": data
+	}
 
 def get_cur_logFile():
 	return os.path.normpath(os.path.join(DATA_PATH, f'{(datetime.now()).strftime("%Y-%m-%d")}_log.txt'))
@@ -240,5 +238,9 @@ def dashboardFilteredLog():
 						title="Filtered Logs",
 						active_page="logs_important")
 
+def sigterm_handler(sig, frame):
+	sys.exit(0)
+
 if __name__ == "__main__":
+	signal.signal(signal.SIGTERM, sigterm_handler)
 	app.run(host="0.0.0.0", port=5000, debug=True)
