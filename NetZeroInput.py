@@ -73,7 +73,7 @@ def log(text, style=LogLevel.DEFAULT):
 		log_content = ""
 		for i, line in enumerate(lines):
 			tag = tags_raw.get(style, "") if i == 0 else indent
-			log_content += f"{timestamp_raw} {tag}{line}"
+			log_content += f"{timestamp_raw} {tag}{line}\n"
 		fName = getFileName() + '_log.txt'
 		try:
 			with open(fName, "a+", encoding='UTF-8') as f:
