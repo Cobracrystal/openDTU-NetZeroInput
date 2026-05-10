@@ -145,7 +145,10 @@ def validate_consumption(new_value):
 		return new_value
 	else: # unsure
 		better_value = sorted(grid_history)[1]
-		log(f"Validating suspicious Bitmeter reading: {new_value}W -> {better_value}W", LogLevel.INFO)
+		if abs(new_value - better_value) > 1000:
+			log(f"Validating very suspicious Bitmeter reading: {new_value}W -> {better_value}W", LogLevel.INFO)
+		elif new_value != better_value:
+			log(f"Validating suspicious Bitmeter reading: {new_value}W -> {better_value}W", LogLevel.DEFAULT)
 		return better_value
 	
 def get_openDTU_data():
@@ -350,8 +353,8 @@ update_interval = 3 # Time in seconds between each update to dtu limit
 saveInterval = 5 # Time in seconds between each write to database. Datapoints are gotten every second regardless
 checkInterval = 1 # Time in seconds between each check
 # Note that this is all within journalctl anyway.
-logLevelConsole = LogLevel.INFO # Only log WARNING and ERROR in console
-logLevelTextFile = LogLevel.DEFAULT # Only log INFO, WARNING, ERROR in file. Set to 0 to log nothing.
+logLevelConsole = LogLevel.INFO # log INFO, WARNING, ERROR in console
+logLevelTextFile = LogLevel.DEFAULT # Log everything.
 storeData = True # Whether to store received data in SQL
 # battery_voltage_thresholds = [12.4*4, 12.5*4, 12.6*4] # Threshold below which connection with battery is reduced.
 battery_voltage_thresholds = [49.6, 50, 50.4] # Threshold below which connection with battery is reduced.
