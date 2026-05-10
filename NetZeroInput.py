@@ -85,17 +85,16 @@ def log(text, style=LogLevel.DEFAULT):
 def initSQLMetadata(dc_list: list[DCInput], conn: sqlite3.Connection):
 	""" To make sure all current DC inputs are registered in the metadata table."""
 	metadata_rows = [(dc.index, dc.name) for dc in dc_list]
-	with contextlib.closing(conn.cursor()) as cursor:
-		try:
+	try:
+		with conn, contextlib.closing(conn.cursor()) as cursor:
 			cursor.executemany(
 				"INSERT OR REPLACE INTO dc_metadata (inputIndex, name) VALUES (?, ?)",
 				metadata_rows
 			)
-			conn.commit()
-			return True
-		except sqlite3.Error as e:
-			log(f"Metadata sync failed: {e}", LogLevel.ERROR)
-			return False
+		return True
+	except sqlite3.Error as e:
+		log(f"Metadata sync failed: {e}", LogLevel.ERROR)
+		return False
 	
 def saveSQL(conn: sqlite3.Connection):
 	global data_buffer, metadataIsSynced
@@ -119,16 +118,14 @@ def saveSQL(conn: sqlite3.Connection):
 				dc.power,
 				dc.voltage
 			))
-	with contextlib.closing(conn.cursor()) as cursor:
-		try:
+	try:
+		with conn, contextlib.closing(conn.cursor()) as cursor:
 			cursor.executemany("INSERT OR IGNORE INTO measurements VALUES (?, ?, ?, ?)", rows_measurement)
 			cursor.executemany("INSERT OR IGNORE INTO dc_inputs VALUES (?, ?, ?, ?)", rows_dc_input)
-			conn.commit()
-		except sqlite3.Error as e:
-			log(f'Saving failed: {e}', style=LogLevel.ERROR)
-			conn.rollback()
-		finally:
-			data_buffer.clear()
+	except sqlite3.Error as e:
+		log(f'Saving failed: {e}', style=LogLevel.ERROR)
+	finally:
+		data_buffer.clear()
 
 def clamp(value, lower, upper):
 	return max(lower, min(upper, value))
@@ -393,35 +390,35 @@ log(f'Starting..', LogLevel.INFO)
 
 # SQL INIT
 with contextlib.closing(sqlite3.connect(DB_FILE, timeout=5)) as conn:
-	conn.execute("PRAGMA journal_mode=WAL;")
-	conn.execute("""
-	CREATE TABLE IF NOT EXISTS measurements (
-		timestamp INTEGER PRIMARY KEY,
-		inverterLimit REAL,
-		acPowerOutput REAL, 
-		gridConsumption REAL
-	)
-	""")
-	conn.execute("""
-	CREATE TABLE IF NOT EXISTS dc_metadata (
-		inputIndex INTEGER PRIMARY KEY,
-		name TEXT UNIQUE
-	)
-	""")
-	conn.execute("""
-	CREATE TABLE IF NOT EXISTS dc_inputs (
-		timestamp INTEGER,
-		inputIndex INTEGER,
-		power REAL,
-		voltage REAL,
-		FOREIGN KEY(timestamp) REFERENCES measurements(timestamp)
-		FOREIGN KEY(inputIndex) REFERENCES dc_metadata(inputIndex)
-	)
-	""")
-	conn.execute("""
-		CREATE INDEX IF NOT EXISTS "INDEXTIMESTAMP" ON "dc_inputs" ( "timestamp" )
-	""")
-	conn.commit()
+	with conn:
+		conn.execute("PRAGMA journal_mode=WAL;")
+		conn.execute("""
+		CREATE TABLE IF NOT EXISTS measurements (
+			timestamp INTEGER PRIMARY KEY,
+			inverterLimit REAL,
+			acPowerOutput REAL, 
+			gridConsumption REAL
+		)
+		""")
+		conn.execute("""
+		CREATE TABLE IF NOT EXISTS dc_metadata (
+			inputIndex INTEGER PRIMARY KEY,
+			name TEXT UNIQUE
+		)
+		""")
+		conn.execute("""
+		CREATE TABLE IF NOT EXISTS dc_inputs (
+			timestamp INTEGER,
+			inputIndex INTEGER,
+			power REAL,
+			voltage REAL,
+			FOREIGN KEY(timestamp) REFERENCES measurements(timestamp)
+			FOREIGN KEY(inputIndex) REFERENCES dc_metadata(inputIndex)
+		)
+		""")
+		conn.execute("""
+			CREATE INDEX IF NOT EXISTS "INDEXTIMESTAMP" ON "dc_inputs" ( "timestamp" )
+		""")
 
 # Seed the history to prevent a 0
 	grid_power_seed_value = get_BitMeter_data()
