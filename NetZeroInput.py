@@ -419,7 +419,7 @@ with contextlib.closing(sqlite3.connect(DB_FILE, timeout=5)) as conn:
 	)
 	""")
 	conn.execute("""
-	CREATE INDEX "INDEXTIMESTAMP" ON "dc_inputs" "timestamp"
+		CREATE INDEX IF NOT EXISTS "INDEXTIMESTAMP" ON "dc_inputs" ( "timestamp" )
 	""")
 	conn.commit()
 
