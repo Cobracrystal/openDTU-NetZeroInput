@@ -281,8 +281,9 @@ def update(conn: sqlite3.Connection):
 		limit_ratio = 1
 	if batteryIsOn:
 		if batteryWasOff:
-			log('Battery is delivering electricity again. Continuing script.', LogLevel.INFO)
+			log(f'Battery is delivering electricity again ({ battery_voltage }V, { battery_power }W). Continuing script.', LogLevel.INFO)
 			batteryWasOff = False
+			batteryWasBelowLastThresholds = [False] * len(battery_voltage_thresholds) # Reset the thresholds so that it logs the same thing again.
 		# Calculate base limit. Will be clamped to max_power later.
 		new_limit_a = round(limit_ratio * (grid_power_consumption + ac_power_output)) # works even if negative.
 		
@@ -304,7 +305,9 @@ def update(conn: sqlite3.Connection):
 				log(f'Capping Limit to {battery_voltage_threshold_caps[i] * 100}% until voltage drops below additional threshold or rises above {recovery_voltage}V again. (Threshold + Buffer)', LogLevel.INFO)
 			else:
 				if battery_voltage_threshold_caps[i] == 0:
-					return False
+					if old_limit_a == 0:
+						return False
+					log(f'Limit should have been 0 (because Battery Voltage {battery_voltage}V below threshold {i+1} ({battery_voltage_thresholds[i]}V)), but it is {old_limit_a}W instead. Correcting to 0.', LogLevel.WARNING)
 			max_power *= battery_voltage_threshold_caps[i]
 		else:
 			if any(batteryWasBelowLastThresholds):
