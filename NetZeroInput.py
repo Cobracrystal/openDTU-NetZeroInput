@@ -453,3 +453,5 @@ with contextlib.closing(sqlite3.connect(DB_FILE, timeout=5)) as conn:
 				log(f"Script is {round(abs(sleep_time),ndigits=1)} seconds behind!", LogLevel.WARNING)
 	except KeyboardInterrupt:
 		log('User Interruption. Closing...', LogLevel.INFO)
+	except BaseException as e:
+		log(f"We should never be here. " + str(e))
