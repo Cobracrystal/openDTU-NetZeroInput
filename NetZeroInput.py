@@ -265,7 +265,7 @@ def update(conn: sqlite3.Connection):
 				log('No connection to inverter. Battery was on, so this is unusual. Skipping logs until reachable.', LogLevel.INFO)
 		return False
 	# Nur updaten wenn update_interval verstrichen ist
-	if ticks % (update_interval // checkInterval) != 0:
+	if ticks % (update_interval // checkInterval) != 0 or onlyStoreData:
 		return True
 	# Wechselrichter ist erreichbar
 	if not inverterWasReachable:
@@ -361,8 +361,9 @@ checkInterval = 1 # Time in seconds between each check
 logLevelConsole = LogLevel.INFO # log INFO, WARNING, ERROR in console
 logLevelTextFile = LogLevel.DEFAULT # Log everything.
 storeData = True # Whether to store received data in SQL
+onlyStoreData = True # Whether to not adjust anything and only log data
 # battery_voltage_thresholds = [12.4*4, 12.5*4, 12.6*4] # Threshold below which connection with battery is reduced.
-battery_voltage_thresholds = [49.6, 50, 50.4] # Threshold below which connection with battery is reduced.
+battery_voltage_thresholds = [49.1, 49.5, 49.9] # Threshold below which connection with battery is reduced.
 battery_voltage_threshold_caps = [0, 0.5, 0.75] # Multipliers for max_power (caps max power for inverter when corresponding threshold is reached)
 battery_voltage_recovery_buffers = [1.7, 0.7, 0.6] # Multipliers for max_power (caps max power for inverter when corresponding threshold is reached)
 DB_FILE = "solar_data.db"
