@@ -264,9 +264,6 @@ def update(conn: sqlite3.Connection):
 			else:
 				log('No connection to inverter. Battery was on, so this is unusual. Skipping logs until reachable.', LogLevel.INFO)
 		return False
-	# Nur updaten wenn update_interval verstrichen ist
-	if ticks % (update_interval // checkInterval) != 0 or onlyStoreData:
-		return True
 	# Wechselrichter ist erreichbar
 	if not inverterWasReachable:
 		inverterWasReachable = True
@@ -274,6 +271,9 @@ def update(conn: sqlite3.Connection):
 			log("Reestablished connection to inverter. Battery is still off, continue waiting.", LogLevel.INFO)
 		else:
 			log('Reestablished connection to inverter. Continuing script.', LogLevel.INFO)
+	# Nur updaten wenn update_interval verstrichen ist
+	if ticks % (update_interval // checkInterval) != 0 or onlyStoreData:
+		return True
 	# Wechselrichter gibt nicht old_limit_a Watt aus, sondern weniger, außer das limit ist 0.
 	if ac_power_output > 0 and old_limit_a > 0:
 		limit_ratio = old_limit_a / ac_power_output
