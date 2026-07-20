@@ -400,7 +400,7 @@ log(f'Sunrise: {sunrise.time()}, Sunset: {sunset.time()}', LogLevel.INFO)
 log(f'Starting..', LogLevel.INFO)
 log(f'Battery Voltage Thresholds: {battery_voltage_thresholds}. Caps: {battery_voltage_threshold_caps}', LogLevel.INFO)	
 if onlyStoreData:
-	log(f'WARNING: OPTION ONLY_STORE_DATA SET. WILL NOT UPDATE ANYTHING', LogLevel.WARNING)
+	log(f'WARNING: OPTION TO ONLY STORE DATA SET. WILL NOT UPDATE ANYTHING', LogLevel.WARNING)
 # SQL INIT
 with contextlib.closing(sqlite3.connect(DB_FILE, timeout=5)) as conn:
 	with conn:
